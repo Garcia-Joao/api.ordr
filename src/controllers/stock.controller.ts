@@ -31,9 +31,8 @@ export async function getStockProducts(req: AuthRequest, res: Response) {
 export async function createStockMovement(req: AuthRequest, res: Response) {
   try {
     const companyId = req.user?.companyId
-    const userId = req.user?.id
 
-    if (!companyId || !userId) {
+    if (!companyId) {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 
@@ -46,7 +45,6 @@ export async function createStockMovement(req: AuthRequest, res: Response) {
 
     const movement = await stockService.createStockMovement({
       companyId,
-      userId,
       productId: productId ?? '',
       type: type as 'in' | 'out' | 'adjustment',
       quantity: Number(quantity ?? 0),

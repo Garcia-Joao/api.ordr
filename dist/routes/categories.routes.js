@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const categories_controller_1 = require("../controllers/categories.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const require_permission_middleware_1 = require("../middleware/require-permission.middleware");
+const router = (0, express_1.Router)();
+router.get('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('categories.view', 'products.view', 'pdv.view', 'interno.view', 'orders.create'), categories_controller_1.getCategories);
+router.get('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('categories.view', 'products.view', 'pdv.view', 'interno.view', 'orders.create'), categories_controller_1.getCategoryById);
+router.post('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('categories.manage'), categories_controller_1.createCategory);
+router.put('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('categories.manage'), categories_controller_1.updateCategory);
+router.delete('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('categories.manage'), categories_controller_1.deleteCategory);
+exports.default = router;

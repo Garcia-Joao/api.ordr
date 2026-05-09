@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const require_permission_middleware_1 = require("../middleware/require-permission.middleware");
+const stock_controller_1 = require("../controllers/stock.controller");
+const router = (0, express_1.Router)();
+router.get('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('stock.view', 'pdv.view', 'interno.view', 'stock.quickBuy', 'buys.view', 'buys.manage'), stock_controller_1.getStockProducts);
+router.post('/movements', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('stock.adjust'), stock_controller_1.createStockMovement);
+router.get('/:productId/movements', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('stock.view', 'pdv.view', 'interno.view', 'stock.quickBuy', 'buys.view', 'buys.manage'), stock_controller_1.getProductStockMovements);
+router.get('/:productId/recipe-analysis', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('stock.view', 'pdv.view', 'interno.view', 'stock.quickBuy', 'buys.view', 'buys.manage'), stock_controller_1.getRecipeAnalysis);
+router.get('/:productId/calculator', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('stock.view', 'pdv.view', 'interno.view', 'stock.quickBuy', 'buys.view', 'buys.manage'), stock_controller_1.calculateRecipeProduction);
+exports.default = router;

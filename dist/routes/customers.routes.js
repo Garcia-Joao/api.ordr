@@ -1,0 +1,16 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const customers_controller_1 = require("../controllers/customers.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const require_permission_middleware_1 = require("../middleware/require-permission.middleware");
+const router = (0, express_1.Router)();
+router.get('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('customers.view'), customers_controller_1.listCustomersController);
+router.get('/lookup-by-comanda', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('customers.view', 'customers.eventComanda.manage', 'pdv.view', 'orders.create'), customers_controller_1.lookupCustomerByEventComandaController);
+router.post('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('customers.create'), customers_controller_1.createCustomerController);
+router.post('/event-comanda', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('customers.eventComanda.manage', 'customers.update', 'pdv.view', 'orders.create'), customers_controller_1.upsertEventCustomerComandaController);
+router.delete('/event-comanda/:eventDateId/:customerId', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('customers.eventComanda.manage', 'customers.update'), customers_controller_1.removeEventCustomerComandaController);
+router.get('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('customers.view'), customers_controller_1.getCustomerController);
+router.patch('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('customers.update'), customers_controller_1.updateCustomerController);
+router.delete('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('customers.delete'), customers_controller_1.deleteCustomerController);
+exports.default = router;

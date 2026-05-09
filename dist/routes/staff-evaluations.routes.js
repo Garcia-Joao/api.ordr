@@ -1,0 +1,14 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const staff_evaluations_controller_1 = require("../controllers/staff-evaluations.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const require_permission_middleware_1 = require("../middleware/require-permission.middleware");
+const router = (0, express_1.Router)();
+router.get('/criteria', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('staffEvaluations.view'), staff_evaluations_controller_1.listStaffEvaluationCriteriaController);
+router.post('/criteria', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('staffEvaluations.manage'), staff_evaluations_controller_1.createStaffEvaluationCriterionController);
+router.get('/events/:eventDateId/staff', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('staffEvaluations.view'), staff_evaluations_controller_1.listEventStaffForReviewController);
+router.post('/events/:eventDateId/staff/evaluations', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('staffEvaluations.manage'), staff_evaluations_controller_1.saveStaffEvaluationController);
+router.get('/people/ratings', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('staffEvaluations.view'), staff_evaluations_controller_1.getPeopleEvaluationRatingsController);
+router.get('/people/:personId/summary', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('staffEvaluations.view'), staff_evaluations_controller_1.getPersonEvaluationSummaryController);
+exports.default = router;

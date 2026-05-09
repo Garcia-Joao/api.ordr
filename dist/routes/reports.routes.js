@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const reports_controller_1 = require("../controllers/reports.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const require_permission_middleware_1 = require("../middleware/require-permission.middleware");
+const router = (0, express_1.Router)();
+router.get('/filters', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('reports.view'), reports_controller_1.getReportsFiltersController);
+router.get('/dashboard', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('reports.view'), reports_controller_1.getReportsDashboardController);
+exports.default = router;

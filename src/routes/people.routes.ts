@@ -14,6 +14,10 @@ import {
 
 export const peopleRoutes = Router()
 
+function getParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value ?? ''
+}
+
 peopleRoutes.get('/', requireAuth, requirePermission('people.view'), async (_req, res) => {
   try {
     const people = await listPeople()
@@ -63,7 +67,7 @@ peopleRoutes.post('/', requireAuth, requirePermission('people.manage'), async (r
 
 peopleRoutes.put('/:id', requireAuth, requirePermission('people.manage'), async (req, res) => {
   try {
-    const person = await updatePerson(req.params.id, req.body)
+    const person = await updatePerson(getParam(req.params.id), req.body)
     res.json(person)
   } catch (error: any) {
     console.error(error)
@@ -73,7 +77,7 @@ peopleRoutes.put('/:id', requireAuth, requirePermission('people.manage'), async 
 
 peopleRoutes.patch('/:id/disable', requireAuth, requirePermission('people.manage'), async (req, res) => {
   try {
-    const result = await disablePerson(req.params.id)
+    const result = await disablePerson(getParam(req.params.id))
     res.json(result)
   } catch (error: any) {
     console.error(error)
@@ -83,7 +87,7 @@ peopleRoutes.patch('/:id/disable', requireAuth, requirePermission('people.manage
 
 peopleRoutes.patch('/:id/restore', requireAuth, requirePermission('people.manage'), async (req, res) => {
   try {
-    const result = await restorePerson(req.params.id)
+    const result = await restorePerson(getParam(req.params.id))
     res.json(result)
   } catch (error: any) {
     console.error(error)
@@ -93,7 +97,7 @@ peopleRoutes.patch('/:id/restore', requireAuth, requirePermission('people.manage
 
 peopleRoutes.delete('/:id', requireAuth, requirePermission('people.manage'), async (req, res) => {
   try {
-    const result = await deletePerson(req.params.id)
+    const result = await deletePerson(getParam(req.params.id))
     res.json(result)
   } catch (error: any) {
     console.error(error)

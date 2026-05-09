@@ -85,12 +85,18 @@ export async function createTestCompanyFromCompany({
     }
 
     for (const product of sourceCompany.products) {
+      const mappedCategoryId = product.categoryId
+        ? categoryIdMap.get(product.categoryId)
+        : null
+
+      if (!mappedCategoryId) {
+        throw new Error('PRODUCT_CATEGORY_NOT_FOUND')
+      }
+
       const createdProduct = await tx.product.create({
         data: {
           companyId: newCompany.id,
-          categoryId: product.categoryId
-            ? categoryIdMap.get(product.categoryId) ?? null
-            : null,
+          categoryId: mappedCategoryId,
           name: product.name,
           description: product.description,
           emoji: product.emoji,

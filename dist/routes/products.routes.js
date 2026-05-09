@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const require_permission_middleware_1 = require("../middleware/require-permission.middleware");
+const products_controller_1 = require("../controllers/products.controller");
+const router = (0, express_1.Router)();
+router.get('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.view', 'pdv.view', 'interno.view', 'orders.create', 'stock.view'), products_controller_1.getProducts);
+router.get('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.view', 'pdv.view', 'interno.view', 'orders.create', 'stock.view'), products_controller_1.getProductById);
+router.post('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.create'), products_controller_1.createProduct);
+router.patch('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.update'), products_controller_1.updateProduct);
+router.delete('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.delete'), products_controller_1.deleteProduct);
+exports.default = router;

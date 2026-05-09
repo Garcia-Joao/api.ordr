@@ -1,0 +1,17 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const orders_controller_1 = require("../controllers/orders.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const require_permission_middleware_1 = require("../middleware/require-permission.middleware");
+const router = (0, express_1.Router)();
+router.get('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('orders.view', 'pdv.view', 'interno.view'), orders_controller_1.getOrders);
+router.post('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('orders.create'), orders_controller_1.createOrder);
+router.patch('/:id/cancel', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('orders.cancel'), orders_controller_1.cancelOrder);
+router.get('/internal-customer/:internalCustomerId/today', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('internalCustomers.view', 'interno.view'), orders_controller_1.getInternalCustomerTodayOrders);
+router.post('/internal-customer/:internalCustomerId/pay-today', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('internalCustomers.pay', 'interno.view'), orders_controller_1.payInternalCustomerTodayOrders);
+router.post('/internal-customer/:internalCustomerId/pay-selected', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('internalCustomers.pay', 'interno.view'), orders_controller_1.paySelectedInternalCustomerOrders);
+router.get('/internal-customer/:internalCustomerId/pending', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('internalCustomers.view', 'interno.view'), orders_controller_1.getInternalCustomerPendingOrders);
+router.get('/report/pdf', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('reports.export'), orders_controller_1.downloadOrdersReportPdf);
+router.get('/report/summary', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('reports.view'), orders_controller_1.getOrdersReportSummary);
+exports.default = router;
