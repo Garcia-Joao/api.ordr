@@ -7,6 +7,11 @@ const PORT = Number(process.env.PORT || 3000)
 
 async function start() {
   try {
+    console.log('[startup] Starting ORDR backend...')
+    console.log('[startup] NODE_ENV:', process.env.NODE_ENV)
+    console.log('[startup] PORT:', process.env.PORT)
+    console.log('[startup] DATABASE_URL exists:', Boolean(process.env.DATABASE_URL))
+
     if (!process.env.DATABASE_URL) {
       throw new Error('DATABASE_URL is not defined')
     }
@@ -17,7 +22,7 @@ async function start() {
     await ensureBaseData()
     console.log('[startup] Base data ensured')
 
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on port ${PORT}`)
     })
   } catch (error) {

@@ -10,6 +10,10 @@ const ensure_base_data_1 = require("./bootstrap/ensure-base-data");
 const PORT = Number(process.env.PORT || 3000);
 async function start() {
     try {
+        console.log('[startup] Starting ORDR backend...');
+        console.log('[startup] NODE_ENV:', process.env.NODE_ENV);
+        console.log('[startup] PORT:', process.env.PORT);
+        console.log('[startup] DATABASE_URL exists:', Boolean(process.env.DATABASE_URL));
         if (!process.env.DATABASE_URL) {
             throw new Error('DATABASE_URL is not defined');
         }
@@ -17,7 +21,7 @@ async function start() {
         console.log('[startup] Database connected');
         await (0, ensure_base_data_1.ensureBaseData)();
         console.log('[startup] Base data ensured');
-        app_1.default.listen(PORT, () => {
+        app_1.default.listen(PORT, '0.0.0.0', () => {
             console.log(`Server running on port ${PORT}`);
         });
     }
