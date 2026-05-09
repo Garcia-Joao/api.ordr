@@ -1,0 +1,979 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EventDateStatus {
+  scheduled
+  done
+  cancelled
+}
+
+enum EventPersonStatus {
+  pending
+  confirmed
+  declined
+  maybe
+}
+
+model Company {
+  id                      String                     @id @default(cuid())
+  name                    String
+  isTest                  Boolean                    @default(false)
+  createdAt               DateTime                   @default(now())
+  categories              Category[]
+  orders                  Order[]
+  products                Product[]
+  memberships             UserCompany[]
+  accessRoles             Role[]
+  internalCustomers       InternalCustomer[]
+  salesEnvironments       SalesEnvironment[]
+  stockMovements          StockMovement[]
+  auditLogs               AuditLog[]
+  customers               Customer[]
+  eventCustomerComandas   EventCustomerComanda[]
+  staffEvaluationCriteria StaffEvaluationCriterion[]
+  staffEvaluations        StaffEvaluation[]
+  buyRequests             BuyRequest[]
+  productCostHistory      ProductCostHistory[]
+
+  eventTemplates EventTemplate[]
+  eventDates     EventDate[]
+
+  orderPrinterName       String?
+  orderPrinterDriverName String?
+  orderPrinterPortName   String?
+  orderPrinterPaperWidth Int?
+}
+
+model User {
+  id          String        @id @default(cuid())
+  username    String        @unique
+  password    String
+  name        String?
+  phone       String?
+  photoBase64 String?
+  createdAt   DateTime      @default(now())
+  role        UserRole      @default(admin)
+  memberships UserCompany[]
+
+  createdOrders             Order[]              @relation("OrderCreatedBy")
+  cancelledOrders           Order[]              @relation("OrderCancelledBy")
+  createdProducts           Product[]            @relation("ProductCreatedBy")
+  updatedProducts           Product[]            @relation("ProductUpdatedBy")
+  deletedProducts           Product[]            @relation("ProductDeletedBy")
+  createdCategories         Category[]           @relation("CategoryCreatedBy")
+  updatedCategories         Category[]           @relation("CategoryUpdatedBy")
+  deletedCategories         Category[]           @relation("CategoryDeletedBy")
+  performedStockChanges     StockMovement[]      @relation("StockMovementPerformedBy")
+  auditLogs                 AuditLog[]
+  createdProductCostHistory ProductCostHistory[] @relation("ProductCostHistoryCreatedBy")
+}
+
+model UserCompany {
+  id        String @id @default(cuid())
+  userId    String
+  companyId String
+
+  // Legacy role kept for old code/data compatibility. New access control uses systemRole + customRole.
+  role              UserRole   @default(admin)
+  systemRole        SystemRole @default(ADMIN)
+  customRoleId      String?
+  activeEventDateId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  company         Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  customRole      Role?      @relation(fields: [customRoleId], references: [id], onDelete: SetNull)
+  activeEventDate EventDate? @relation("UserCompanyActiveEventDate", fields: [activeEventDateId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, companyId])
+  @@index([userId])
+  @@index([companyId])
+  @@index([systemRole])
+  @@index([customRoleId])
+  @@index([activeEventDateId])
+}
+
+model Role {
+  id          String  @id @default(cuid())
+  companyId   String
+  name        String
+  description String?
+  active      Boolean @default(true)
+
+  company     Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  memberships UserCompany[]
+  permissions RolePermission[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([active])
+}
+
+model RolePermission {
+  id            String @id @default(cuid())
+  roleId        String
+  permissionKey String
+
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionKey])
+  @@index([permissionKey])
+}
+
+model Category {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  slug      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  emoji     String?
+
+  createdByUserId String?
+  updatedByUserId String?
+  deletedByUserId String?
+  deletedAt       DateTime?
+
+  company     Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  products    Product[]
+  costHistory ProductCostHistory[]
+
+  createdByUser User? @relation("CategoryCreatedBy", fields: [createdByUserId], references: [id])
+  updatedByUser User? @relation("CategoryUpdatedBy", fields: [updatedByUserId], references: [id])
+  deletedByUser User? @relation("CategoryDeletedBy", fields: [deletedByUserId], references: [id])
+
+  @@index([companyId])
+  @@index([createdByUserId])
+  @@index([updatedByUserId])
+  @@index([deletedByUserId])
+  @@index([deletedAt])
+}
+
+model Product {
+  id          String  @id @default(cuid())
+  companyId   String
+  categoryId  String
+  name        String
+  description String?
+  emoji       String?
+  price       Decimal @db.Decimal(10, 2)
+  active      Boolean @default(true)
+
+  isStockOnly         Boolean    @default(false)
+  trackStock          Boolean    @default(false)
+  stockQuantity       Float      @default(0)
+  minStock            Float      @default(0)
+  unitContentQuantity Decimal?   @db.Decimal(10, 3)
+  unitContentUnit     StockUnit?
+
+  costMode          ProductCostMode @default(simple)
+  simpleCost        Decimal?        @db.Decimal(10, 2)
+  stockUnit         StockUnit?
+  referenceQuantity Decimal?        @db.Decimal(10, 3)
+  referenceCost     Decimal?        @db.Decimal(10, 2)
+
+  madeOnDemand         Boolean    @default(false)
+  unlimitedStock       Boolean    @default(false)
+  recipeOutputQuantity Decimal?   @db.Decimal(10, 3)
+  recipeOutputUnit     StockUnit?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdByUserId String?
+  updatedByUserId String?
+  deletedByUserId String?
+  deletedAt       DateTime?
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  createdByUser User? @relation("ProductCreatedBy", fields: [createdByUserId], references: [id])
+  updatedByUser User? @relation("ProductUpdatedBy", fields: [updatedByUserId], references: [id])
+  deletedByUser User? @relation("ProductDeletedBy", fields: [deletedByUserId], references: [id])
+
+  environmentPrices           ProductEnvironmentPrice[]
+  variationGroups             ProductVariationGroup[]
+  recipeItems                 ProductRecipeItem[]                @relation("RecipeProduct")
+  ingredientInRecipes         ProductRecipeItem[]                @relation("RecipeIngredient")
+  stockMovements              StockMovement[]
+  orderItems                  OrderItem[]
+  variationOptionRecipeUsages ProductVariationOptionRecipeItem[] @relation("VariationOptionRecipeIngredient")
+  buyRequestItems             BuyRequestItem[]
+  costHistory                 ProductCostHistory[]
+
+  @@index([companyId])
+  @@index([categoryId])
+  @@index([active])
+  @@index([costMode])
+  @@index([createdByUserId])
+  @@index([updatedByUserId])
+  @@index([deletedByUserId])
+  @@index([deletedAt])
+}
+
+model ProductRecipeItem {
+  id                  String    @id @default(cuid())
+  productId           String
+  ingredientProductId String
+  quantity            Decimal   @db.Decimal(10, 3)
+  unit                StockUnit
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  product           Product @relation("RecipeProduct", fields: [productId], references: [id], onDelete: Cascade)
+  ingredientProduct Product @relation("RecipeIngredient", fields: [ingredientProductId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, ingredientProductId, unit])
+  @@index([productId])
+  @@index([ingredientProductId])
+}
+
+model StockMovement {
+  id          String   @id @default(cuid())
+  companyId   String
+  productId   String
+  type        String
+  quantity    Float
+  previousQty Float
+  newQty      Float
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  performedByUserId String?
+
+  company         Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  product         Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  performedByUser User?   @relation("StockMovementPerformedBy", fields: [performedByUserId], references: [id])
+
+  @@index([companyId])
+  @@index([productId])
+  @@index([createdAt])
+  @@index([performedByUserId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  companyId   String
+  userId      String?
+  entityType  String
+  entityId    String
+  action      String
+  description String?
+  oldValues   Json?
+  newValues   Json?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model ProductVariationGroup {
+  id             String                        @id @default(cuid())
+  productId      String
+  name           String
+  required       Boolean                       @default(false)
+  sortOrder      Int                           @default(0)
+  createdAt      DateTime                      @default(now())
+  updatedAt      DateTime                      @updatedAt
+  selectionType  SelectionType
+  itemSelections OrderItemVariationSelection[]
+  product        Product                       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  options        ProductVariationOption[]
+
+  @@unique([productId, name])
+  @@index([productId])
+}
+
+model ProductVariationOption {
+  id            String  @id @default(cuid())
+  groupId       String
+  name          String
+  priceModifier Decimal @db.Decimal(10, 2)
+  sortOrder     Int     @default(0)
+  active        Boolean @default(true)
+
+  costMode          ProductCostMode @default(simple)
+  simpleCost        Decimal?        @db.Decimal(10, 2)
+  stockUnit         StockUnit?
+  referenceQuantity Decimal?        @db.Decimal(10, 3)
+  referenceCost     Decimal?        @db.Decimal(10, 2)
+
+  group             ProductVariationGroup                    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  environmentPrices ProductVariationOptionEnvironmentPrice[]
+  recipeItems       ProductVariationOptionRecipeItem[]
+  selectedInItems   OrderItemVariationSelectionOption[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProductVariationOptionRecipeItem {
+  id                  String  @id @default(cuid())
+  optionId            String
+  ingredientProductId String
+  quantity            Decimal @db.Decimal(10, 3)
+  unit                String
+
+  option            ProductVariationOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  ingredientProduct Product                @relation("VariationOptionRecipeIngredient", fields: [ingredientProductId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([optionId])
+  @@index([ingredientProductId])
+}
+
+model ProductVariationOptionEnvironmentPrice {
+  id                       String   @id @default(cuid())
+  productVariationOptionId String
+  salesEnvironmentId       String
+  priceModifier            Decimal  @db.Decimal(10, 2)
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  productVariationOption ProductVariationOption @relation(fields: [productVariationOptionId], references: [id], onDelete: Cascade)
+  salesEnvironment       SalesEnvironment       @relation(fields: [salesEnvironmentId], references: [id], onDelete: Cascade)
+
+  @@unique([productVariationOptionId, salesEnvironmentId])
+  @@index([productVariationOptionId])
+  @@index([salesEnvironmentId])
+}
+
+model Order {
+  id                 String         @id
+  companyId          String
+  internalCustomerId String?
+  comanda            Int
+  comandaName        String?
+  total              Decimal        @db.Decimal(10, 2)
+  createdAt          DateTime       @default(now())
+  paidAt             DateTime?
+  status             OrderStatus
+  paymentMethod      PaymentMethod?
+  taxApplied         Boolean        @default(true)
+
+  createdByUserId    String?
+  cancelledByUserId  String?
+  cancelledAt        DateTime?
+  cancellationReason String?
+
+  observation      String?
+  company          Company           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  internalCustomer InternalCustomer? @relation(fields: [internalCustomerId], references: [id])
+  items            OrderItem[]
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  eventDateId String?
+  eventDate   EventDate? @relation(fields: [eventDateId], references: [id], onDelete: SetNull)
+
+  createdByUser   User? @relation("OrderCreatedBy", fields: [createdByUserId], references: [id])
+  cancelledByUser User? @relation("OrderCancelledBy", fields: [cancelledByUserId], references: [id])
+
+  @@index([companyId])
+  @@index([eventDateId])
+  @@index([createdAt])
+  @@index([status])
+  @@index([internalCustomerId])
+  @@index([createdByUserId])
+  @@index([cancelledByUserId])
+  @@index([cancelledAt])
+  @@index([customerId])
+}
+
+model OrderItem {
+  id         String                        @id @default(cuid())
+  orderId    String
+  productId  String
+  quantity   Int
+  unitPrice  Decimal                       @db.Decimal(10, 2)
+  totalPrice Decimal                       @db.Decimal(10, 2)
+  notes      String?
+  createdAt  DateTime                      @default(now())
+  order      Order                         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product                       @relation(fields: [productId], references: [id])
+  variations OrderItemVariationSelection[]
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+model OrderItemVariationSelection {
+  id          String                              @id @default(cuid())
+  orderItemId String
+  groupId     String
+  createdAt   DateTime                            @default(now())
+  group       ProductVariationGroup               @relation(fields: [groupId], references: [id])
+  orderItem   OrderItem                           @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  options     OrderItemVariationSelectionOption[]
+
+  @@unique([orderItemId, groupId])
+  @@index([orderItemId])
+  @@index([groupId])
+}
+
+model OrderItemVariationSelectionOption {
+  id            String                      @id @default(cuid())
+  selectionId   String
+  optionId      String
+  priceModifier Decimal                     @db.Decimal(10, 2)
+  option        ProductVariationOption      @relation(fields: [optionId], references: [id])
+  selection     OrderItemVariationSelection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
+
+  @@unique([selectionId, optionId])
+  @@index([selectionId])
+  @@index([optionId])
+}
+
+model InternalCustomer {
+  id                 String   @id @default(cuid())
+  companyId          String
+  salesEnvironmentId String
+  name               String
+  phone              String?
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company          Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  salesEnvironment SalesEnvironment @relation(fields: [salesEnvironmentId], references: [id])
+  orders           Order[]
+  people           Person[]
+
+  @@index([companyId])
+  @@index([salesEnvironmentId])
+  @@index([name])
+  @@index([active])
+}
+
+model SalesEnvironment {
+  id        String   @id @default(cuid())
+  companyId String
+  name      String
+  color     String
+  isDefault Boolean  @default(false)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company               Company                                  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  internalCustomers     InternalCustomer[]
+  productPrices         ProductEnvironmentPrice[]
+  variationOptionPrices ProductVariationOptionEnvironmentPrice[]
+  people                Person[]
+  eventTemplates        EventTemplate[]                          @relation("EventTemplateSalesEnvironment")
+  eventDates            EventDate[]                              @relation("EventDateSalesEnvironment")
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([companyId, isDefault])
+  @@index([active])
+}
+
+model ProductEnvironmentPrice {
+  id                 String           @id @default(cuid())
+  productId          String
+  salesEnvironmentId String
+  price              Decimal          @db.Decimal(10, 2)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  product            Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  salesEnvironment   SalesEnvironment @relation(fields: [salesEnvironmentId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, salesEnvironmentId])
+  @@index([productId])
+  @@index([salesEnvironmentId])
+}
+
+enum PersonContractType {
+  CLT
+  FREELANCER
+  PJ
+  NONE
+  OTHER
+}
+
+enum PersonRateType {
+  HOURLY
+  DAILY
+  EVENT
+  MONTHLY
+  NEGOTIABLE
+}
+
+model Person {
+  id String @id @default(cuid())
+
+  name  String
+  phone String?
+  email String?
+  city  String?
+
+  contractType PersonContractType @default(NONE)
+
+  salesEnvironmentId String?
+  salesEnvironment   SalesEnvironment? @relation(fields: [salesEnvironmentId], references: [id])
+
+  rateType   PersonRateType @default(EVENT)
+  rateAmount Decimal?       @db.Decimal(10, 2)
+
+  rating       Int?
+  observations String?
+
+  active Boolean @default(true)
+
+  internalCustomerId String?
+  internalCustomer   InternalCustomer? @relation(fields: [internalCustomerId], references: [id])
+
+  functions PersonFunctionAssignment[]
+
+  eventTemplates   EventTemplatePerson[]
+  eventDates       EventDatePerson[]
+  staffEvaluations StaffEvaluation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PersonFunction {
+  id          String  @id @default(cuid())
+  name        String  @unique
+  description String?
+  active      Boolean @default(true)
+
+  people PersonFunctionAssignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PersonFunctionAssignment {
+  id String @id @default(cuid())
+
+  personId String
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  functionId String
+  function   PersonFunction @relation(fields: [functionId], references: [id])
+
+  detail String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([personId, functionId, detail])
+}
+
+model EventTemplate {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  notes       String?
+
+  defaultExpectedAudience Int?
+  defaultStartTime        String?
+  defaultEndTime          String?
+
+  active Boolean @default(true)
+
+  fixedPeople EventTemplatePerson[]
+  eventDates  EventDate[]
+
+  salesEnvironmentId String?
+  salesEnvironment   SalesEnvironment? @relation("EventTemplateSalesEnvironment", fields: [salesEnvironmentId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([active])
+}
+
+model EventTemplatePerson {
+  id String @id @default(cuid())
+
+  eventTemplateId String
+  eventTemplate   EventTemplate @relation(fields: [eventTemplateId], references: [id], onDelete: Cascade)
+
+  personId String
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  functionName String?
+  notes        String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([eventTemplateId, personId, functionName])
+  @@index([eventTemplateId])
+  @@index([personId])
+}
+
+model EventDate {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  eventTemplateId String?
+  eventTemplate   EventTemplate? @relation(fields: [eventTemplateId], references: [id], onDelete: SetNull)
+
+  title       String
+  description String?
+  notes       String?
+
+  startAt DateTime
+  endAt   DateTime?
+
+  expectedAudience Int?
+  status           EventDateStatus @default(scheduled)
+
+  people                 EventDatePerson[]
+  orders                 Order[]
+  customerComandas       EventCustomerComanda[]
+  staffEvaluations       StaffEvaluation[]
+  buyRequests            BuyRequest[]
+  activeEventMemberships UserCompany[]          @relation("UserCompanyActiveEventDate")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  salesEnvironmentId String?
+  salesEnvironment   SalesEnvironment? @relation("EventDateSalesEnvironment", fields: [salesEnvironmentId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([eventTemplateId])
+  @@index([startAt])
+  @@index([status])
+}
+
+model EventDatePerson {
+  id String @id @default(cuid())
+
+  eventDateId String
+  eventDate   EventDate @relation(fields: [eventDateId], references: [id], onDelete: Cascade)
+
+  personId String
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  functionName String?
+  status       EventPersonStatus @default(pending)
+  notes        String?
+
+  worksFullEvent Boolean  @default(true)
+  workHours      Decimal? @db.Decimal(10, 2)
+  costOverride   Decimal? @db.Decimal(10, 2)
+  costNotes      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([eventDateId, personId, functionName])
+  @@index([eventDateId])
+  @@index([personId])
+  @@index([status])
+}
+
+model BuyRequest {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  eventDateId String?
+  eventDate   EventDate? @relation(fields: [eventDateId], references: [id], onDelete: SetNull)
+
+  title        String
+  supplierName String?
+  notes        String?
+
+  status BuyRequestStatus @default(pending)
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  confirmedAt DateTime?
+  receivedAt  DateTime?
+  cancelledAt DateTime?
+
+  items BuyRequestItem[]
+
+  @@index([companyId])
+  @@index([eventDateId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model BuyRequestItem {
+  id           String     @id @default(cuid())
+  buyRequestId String
+  buyRequest   BuyRequest @relation(fields: [buyRequestId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+
+  requestedQuantity Float
+  boughtQuantity    Float @default(0)
+
+  unitPrice  Decimal? @db.Decimal(10, 2)
+  totalPrice Decimal? @db.Decimal(10, 2)
+
+  status BuyRequestItemStatus @default(pending)
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([buyRequestId])
+  @@index([productId])
+  @@index([status])
+}
+
+model ProductCostHistory {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  createdByUserId String?
+  createdByUser   User?   @relation("ProductCostHistoryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  source ProductCostHistorySource @default(manual)
+  reason String?
+
+  oldSimpleCost Decimal? @db.Decimal(10, 2)
+  newSimpleCost Decimal? @db.Decimal(10, 2)
+
+  oldReferenceCost Decimal? @db.Decimal(10, 2)
+  newReferenceCost Decimal? @db.Decimal(10, 2)
+
+  oldReferenceQuantity Decimal? @db.Decimal(10, 3)
+  newReferenceQuantity Decimal? @db.Decimal(10, 3)
+
+  oldStockUnit StockUnit?
+  newStockUnit StockUnit?
+
+  oldUnitContentQuantity Decimal? @db.Decimal(10, 3)
+  newUnitContentQuantity Decimal? @db.Decimal(10, 3)
+
+  oldUnitContentUnit StockUnit?
+  newUnitContentUnit StockUnit?
+
+  oldCostPerBaseUnit Decimal? @db.Decimal(12, 6)
+  newCostPerBaseUnit Decimal? @db.Decimal(12, 6)
+
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+  @@index([productId])
+  @@index([categoryId])
+  @@index([createdByUserId])
+  @@index([source])
+  @@index([createdAt])
+  @@index([productId, createdAt])
+  @@index([categoryId, createdAt])
+}
+
+model Customer {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name   String
+  phone  String?
+  email  String?
+  active Boolean @default(true)
+
+  eventComandas EventCustomerComanda[]
+  orders        Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+  @@index([name])
+  @@index([phone])
+  @@index([email])
+  @@index([active])
+}
+
+model EventCustomerComanda {
+  id String @id @default(cuid())
+
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  eventDateId String
+  eventDate   EventDate @relation(fields: [eventDateId], references: [id], onDelete: Cascade)
+
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  comandaNumber Int
+  comandaName   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([eventDateId, customerId])
+  @@unique([eventDateId, comandaNumber])
+  @@index([companyId])
+  @@index([eventDateId])
+  @@index([customerId])
+  @@index([comandaNumber])
+}
+
+model StaffEvaluationCriterion {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  active      Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scores StaffEvaluationScore[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([active])
+}
+
+model StaffEvaluation {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  eventDateId String
+  eventDate   EventDate @relation(fields: [eventDateId], references: [id], onDelete: Cascade)
+
+  personId String
+  person   Person @relation(fields: [personId], references: [id], onDelete: Cascade)
+
+  functionName  String
+  functionScore Int     @default(3)
+  generalNotes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  scores StaffEvaluationScore[]
+
+  @@unique([eventDateId, personId, functionName])
+  @@index([companyId])
+  @@index([eventDateId])
+  @@index([personId])
+  @@index([functionName])
+}
+
+model StaffEvaluationScore {
+  id String @id @default(cuid())
+
+  evaluationId String
+  evaluation   StaffEvaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+
+  criterionId String
+  criterion   StaffEvaluationCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  score Int
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([evaluationId, criterionId])
+  @@index([evaluationId])
+  @@index([criterionId])
+}
+
+enum SystemRole {
+  ADMIN
+  CUSTOM
+}
+
+enum UserRole {
+  admin
+  cashier
+  waiter
+}
+
+enum SelectionType {
+  single
+  multiple
+}
+
+enum OrderStatus {
+  pending
+  paid
+  cancelled
+}
+
+enum PaymentMethod {
+  money
+  pix
+  credit
+  debit
+}
+
+enum ProductCostHistorySource {
+  manual
+  buy_receive
+  product_edit
+  stock_adjustment
+  migration
+}
+
+enum ProductCostMode {
+  simple
+  recipe
+}
+
+enum StockUnit {
+  unit
+  ml
+  l
+  g
+  kg
+}
+
+enum BuyRequestStatus {
+  pending
+  partially_received
+  received
+  cancelled
+}
+
+enum BuyRequestItemStatus {
+  pending
+  bought
+  not_bought
+  partial
+}
