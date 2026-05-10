@@ -36,13 +36,21 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.requireAuth = requireAuth;
 const authService = __importStar(require("../services/auth.service"));
 const COOKIE_NAME = 'auth';
+function getBearerToken(req) {
+    const authorization = req.headers.authorization;
+    if (typeof authorization !== 'string') {
+        return null;
+    }
+    if (!authorization.startsWith('Bearer ')) {
+        return null;
+    }
+    return authorization.slice('Bearer '.length).trim() || null;
+}
 async function requireAuth(req, res, next) {
     try {
-        const bearerToken = typeof req.headers.authorization === 'string' &&
-            req.headers.authorization.startsWith('Bearer ')
-            ? req.headers.authorization.slice('Bearer '.length)
-            : null;
-        const token = bearerToken || req.cookies?.[COOKIE_NAME];
+        const bearerToken = getBearerToken(req);
+        const cookieToken = req.cookies?.[COOKIE_NAME];
+        const token = bearerToken || cookieToken;
         if (!token) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
