@@ -19,11 +19,36 @@ enum EventPersonStatus {
   maybe
 }
 
+enum PlatformAdminRole {
+  OWNER
+  ADMIN
+  SUPPORT
+}
+
+enum CompanyAccessStatus {
+  ACTIVE
+  SUSPENDED
+  BLOCKED
+  CANCELLED
+}
+
+enum CompanyLicenseStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  REPLACED
+}
+
 model Company {
   id                      String                     @id @default(cuid())
   name                    String
   isTest                  Boolean                    @default(false)
   createdAt               DateTime                   @default(now())
+
+  platformAccessStatus    CompanyAccessStatus        @default(ACTIVE)
+  platformBlockedAt       DateTime?
+  platformBlockedReason   String?
+
   categories              Category[]
   orders                  Order[]
   products                Product[]
@@ -47,6 +72,8 @@ model Company {
   orderPrinterDriverName String?
   orderPrinterPortName   String?
   orderPrinterPaperWidth Int?
+
+  platformLicenses CompanyLicense[]
 }
 
 model User {
@@ -912,6 +939,72 @@ model StaffEvaluationScore {
   @@unique([evaluationId, criterionId])
   @@index([evaluationId])
   @@index([criterionId])
+}
+
+model PlatformAdminUser {
+  id        String            @id @default(cuid())
+  username  String            @unique
+  password  String
+  name      String?
+  role      PlatformAdminRole @default(OWNER)
+  active    Boolean           @default(true)
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  createdLicensePlans LicensePlan[]    @relation("LicensePlanCreatedBy")
+  createdLicenses     CompanyLicense[] @relation("CompanyLicenseCreatedBy")
+
+  @@index([username])
+  @@index([active])
+  @@index([role])
+}
+
+model LicensePlan {
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  description    String?
+  durationMonths Int?
+  isLifetime     Boolean  @default(false)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  createdByAdminId String?
+  createdByAdmin   PlatformAdminUser? @relation("LicensePlanCreatedBy", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  companyLicenses CompanyLicense[]
+
+  @@index([slug])
+  @@index([active])
+  @@index([createdByAdminId])
+}
+
+model CompanyLicense {
+  id        String @id @default(cuid())
+  companyId String
+  planId    String
+
+  status    CompanyLicenseStatus @default(ACTIVE)
+  startsAt  DateTime             @default(now())
+  endsAt    DateTime?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  createdByAdminId String?
+  createdByAdmin   PlatformAdminUser? @relation("CompanyLicenseCreatedBy", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+
+  company Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  plan    LicensePlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@index([planId])
+  @@index([status])
+  @@index([startsAt])
+  @@index([endsAt])
+  @@index([createdByAdminId])
 }
 
 enum SystemRole {

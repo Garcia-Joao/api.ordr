@@ -20,6 +20,7 @@ import reportsRoutes from './routes/reports.routes'
 import router from './routes/product-cost-history.routes'
 import accessRoutes from './routes/access.routes'
 import auditRoutes from './routes/audit.routes'
+import adminRouter from './routes/admin.routes'
 
 import { prisma } from './lib/prisma'
 
@@ -31,8 +32,11 @@ const allowedOrigins = [
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
   'http://192.168.15.4:3001',
+  'https://panelordr.com.br',
+  'https://admin.panelordr.com.br',
   process.env.FRONTEND_URL,
   process.env.FRONTEND_LAN_URL,
+  process.env.ADMIN_FRONTEND_URL,
 ].filter(Boolean) as string[]
 
 app.use((req, _res, next) => {
@@ -88,6 +92,7 @@ app.get('/auth/me', (req, res, next) => {
   return next()
 })
 
+app.use('/admin', adminRouter)
 app.use('/auth', authRouter)
 app.use('/products', productsRouter)
 app.use('/categories', categoriesRouter)

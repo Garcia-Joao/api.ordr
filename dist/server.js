@@ -7,6 +7,7 @@ require("dotenv/config");
 const app_1 = __importDefault(require("./app"));
 const prisma_1 = require("./lib/prisma");
 const ensure_base_data_1 = require("./bootstrap/ensure-base-data");
+const admin_service_1 = require("./services/admin.service");
 const PORT = Number(process.env.PORT || 3000);
 async function start() {
     try {
@@ -21,6 +22,8 @@ async function start() {
         console.log('[startup] Database connected');
         await (0, ensure_base_data_1.ensureBaseData)();
         console.log('[startup] Base data ensured');
+        await (0, admin_service_1.ensureInitialPlatformAdmin)();
+        console.log('[startup] Platform admin ensured');
         app_1.default.listen(PORT, '0.0.0.0', () => {
             console.log(`Server running on port ${PORT}`);
         });

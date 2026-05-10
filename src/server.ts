@@ -2,6 +2,7 @@ import 'dotenv/config'
 import app from './app'
 import { prisma } from './lib/prisma'
 import { ensureBaseData } from './bootstrap/ensure-base-data'
+import { ensureInitialPlatformAdmin } from './services/admin.service'
 
 const PORT = Number(process.env.PORT || 3000)
 
@@ -21,6 +22,9 @@ async function start() {
 
     await ensureBaseData()
     console.log('[startup] Base data ensured')
+
+    await ensureInitialPlatformAdmin()
+    console.log('[startup] Platform admin ensured')
 
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on port ${PORT}`)

@@ -24,6 +24,7 @@ const reports_routes_1 = __importDefault(require("./routes/reports.routes"));
 const product_cost_history_routes_1 = __importDefault(require("./routes/product-cost-history.routes"));
 const access_routes_1 = __importDefault(require("./routes/access.routes"));
 const audit_routes_1 = __importDefault(require("./routes/audit.routes"));
+const admin_routes_1 = __importDefault(require("./routes/admin.routes"));
 const prisma_1 = require("./lib/prisma");
 const app = (0, express_1.default)();
 const allowedOrigins = [
@@ -32,8 +33,11 @@ const allowedOrigins = [
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
     'http://192.168.15.4:3001',
+    'https://panelordr.com.br',
+    'https://admin.panelordr.com.br',
     process.env.FRONTEND_URL,
     process.env.FRONTEND_LAN_URL,
+    process.env.ADMIN_FRONTEND_URL,
 ].filter(Boolean);
 app.use((req, _res, next) => {
     console.log('[request]', req.method, req.path, 'origin:', req.headers.origin);
@@ -78,6 +82,7 @@ app.get('/auth/me', (req, res, next) => {
     }
     return next();
 });
+app.use('/admin', admin_routes_1.default);
 app.use('/auth', auth_routes_1.default);
 app.use('/products', products_routes_1.default);
 app.use('/categories', categories_routes_1.default);
