@@ -34,26 +34,66 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createTestCompany = createTestCompany;
+exports.deleteTestCompany = deleteTestCompany;
 const companiesService = __importStar(require("../services/companies.service"));
+function statusForCompanyError(message) {
+    if (message === 'COMPANY_ACCESS_DENIED')
+        return 403;
+    if (message === 'ADMIN_ACCESS_REQUIRED')
+        return 403;
+    if (message === 'SOURCE_COMPANY_NOT_FOUND')
+        return 404;
+    if (message === 'COMPANY_NOT_FOUND')
+        return 404;
+    if (message === 'SOURCE_COMPANY_IS_ALREADY_TEST')
+        return 400;
+    if (message === 'ONLY_TEST_COMPANY_CAN_BE_DELETED')
+        return 400;
+    return 500;
+}
 async function createTestCompany(req, res) {
     try {
         const userId = req.user?.id;
-        const sourceCompanyId = req.user?.companyId;
-        const { copyData } = req.body;
-        if (!userId || !sourceCompanyId) {
+        const currentCompanyId = req.user?.companyId;
+        const { copyData, sourceCompanyId } = req.body;
+        const resolvedSourceCompanyId = sourceCompanyId || currentCompanyId;
+        if (!userId || !resolvedSourceCompanyId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
         const result = await companiesService.createTestCompanyFromCompany({
             userId,
-            sourceCompanyId,
+            sourceCompanyId: resolvedSourceCompanyId,
             copyData: Boolean(copyData),
         });
         return res.status(201).json(result);
     }
     catch (error) {
         console.error('createTestCompany error:', error);
-        return res.status(500).json({
+        return res.status(statusForCompanyError(error?.message)).json({
             error: error?.message || 'Failed to create test company',
+        });
+    }
+}
+async function deleteTestCompany(req, res) {
+    try {
+        const userId = req.user?.id;
+        const { companyId } = req.params;
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        if (!companyId) {
+            return res.status(400).json({ error: 'companyId is required' });
+        }
+        const result = await companiesService.deleteTestCompany({
+            userId,
+            companyId,
+        });
+        return res.json(result);
+    }
+    catch (error) {
+        console.error('deleteTestCompany error:', error);
+        return res.status(statusForCompanyError(error?.message)).json({
+            error: error?.message || 'Failed to delete test company',
         });
     }
 }

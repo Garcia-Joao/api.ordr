@@ -10,27 +10,69 @@ type AuthRequest = Request & {
   }
 }
 
+function statusForCompanyError(message?: string) {
+  if (message === 'COMPANY_ACCESS_DENIED') return 403
+  if (message === 'ADMIN_ACCESS_REQUIRED') return 403
+  if (message === 'SOURCE_COMPANY_NOT_FOUND') return 404
+  if (message === 'COMPANY_NOT_FOUND') return 404
+  if (message === 'SOURCE_COMPANY_IS_ALREADY_TEST') return 400
+  if (message === 'ONLY_TEST_COMPANY_CAN_BE_DELETED') return 400
+  return 500
+}
+
 export async function createTestCompany(req: AuthRequest, res: Response) {
   try {
     const userId = req.user?.id
-    const sourceCompanyId = req.user?.companyId
-    const { copyData } = req.body as { copyData?: boolean }
+    const currentCompanyId = req.user?.companyId
+    const { copyData, sourceCompanyId } = req.body as {
+      copyData?: boolean
+      sourceCompanyId?: string
+    }
 
-    if (!userId || !sourceCompanyId) {
+    const resolvedSourceCompanyId = sourceCompanyId || currentCompanyId
+
+    if (!userId || !resolvedSourceCompanyId) {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 
     const result = await companiesService.createTestCompanyFromCompany({
       userId,
-      sourceCompanyId,
+      sourceCompanyId: resolvedSourceCompanyId,
       copyData: Boolean(copyData),
     })
 
     return res.status(201).json(result)
   } catch (error: any) {
     console.error('createTestCompany error:', error)
-    return res.status(500).json({
+    return res.status(statusForCompanyError(error?.message)).json({
       error: error?.message || 'Failed to create test company',
+    })
+  }
+}
+
+export async function deleteTestCompany(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.id
+    const { companyId } = req.params as { companyId?: string }
+
+    if (!userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    if (!companyId) {
+      return res.status(400).json({ error: 'companyId is required' })
+    }
+
+    const result = await companiesService.deleteTestCompany({
+      userId,
+      companyId,
+    })
+
+    return res.json(result)
+  } catch (error: any) {
+    console.error('deleteTestCompany error:', error)
+    return res.status(statusForCompanyError(error?.message)).json({
+      error: error?.message || 'Failed to delete test company',
     })
   }
 }

@@ -9,6 +9,7 @@ type SafeCompany = {
   id: string
   name: string
   isTest: boolean
+  testSourceCompanyId: string | null
   role: string
   systemRole: 'ADMIN' | 'CUSTOM'
   customRoleId: string | null
@@ -56,6 +57,7 @@ type UserWithMemberships = {
       id: string
       name: string
       isTest: boolean
+      testSourceCompanyId: string | null
     }
   }>
 }
@@ -100,17 +102,23 @@ function toSafeUser(user: UserWithMemberships, activeCompanyId: string): SafeUse
     activeEventDateId: activeMembership?.activeEventDateId ?? null,
     permissions: activePermissions,
     companyId: activeCompanyId,
-    companies: user.memberships.map((membership) => ({
-      id: membership.company.id,
-      name: membership.company.name,
-      isTest: membership.company.isTest,
-      role: String(membership.role),
-      systemRole: String(membership.systemRole ?? 'ADMIN') as 'ADMIN' | 'CUSTOM',
-      customRoleId: membership.customRoleId ?? null,
-      customRoleName: membership.customRole?.name ?? null,
-      activeEventDateId: membership.activeEventDateId ?? null,
-      permissions: membershipPermissions(membership),
-    })),
+    companies: [...user.memberships]
+      .sort((a, b) => {
+        if (a.company.isTest !== b.company.isTest) return a.company.isTest ? 1 : -1
+        return a.company.name.localeCompare(b.company.name)
+      })
+      .map((membership) => ({
+        id: membership.company.id,
+        name: membership.company.name,
+        isTest: membership.company.isTest,
+        testSourceCompanyId: membership.company.testSourceCompanyId ?? null,
+        role: String(membership.role),
+        systemRole: String(membership.systemRole ?? 'ADMIN') as 'ADMIN' | 'CUSTOM',
+        customRoleId: membership.customRoleId ?? null,
+        customRoleName: membership.customRole?.name ?? null,
+        activeEventDateId: membership.activeEventDateId ?? null,
+        permissions: membershipPermissions(membership),
+      })),
   }
 }
 
@@ -140,7 +148,9 @@ export async function loginUser(username: string, password: string) {
     throw new Error('USER_WITHOUT_COMPANY')
   }
 
-  const activeCompanyId = user.memberships[0].company.id
+  const activeCompanyId =
+    user.memberships.find((membership) => !membership.company.isTest)?.company.id ??
+    user.memberships[0].company.id
   const safeUser = toSafeUser(user, activeCompanyId)
 
   const token = jwt.sign(
@@ -182,12 +192,16 @@ export async function getUserFromToken(token: string) {
     throw new Error('USER_NOT_FOUND')
   }
 
-  const hasAccessToCompany = user.memberships.some(
+  const activeMembership = user.memberships.find(
     (membership) => membership.company.id === decoded.companyId
   )
 
-  if (!hasAccessToCompany) {
+  if (!activeMembership) {
     throw new Error('COMPANY_ACCESS_DENIED')
+  }
+
+  if (activeMembership.company.isTest && activeMembership.systemRole !== 'ADMIN') {
+    throw new Error('ADMIN_ACCESS_REQUIRED')
   }
 
   return toSafeUser(user, decoded.companyId)
@@ -207,12 +221,16 @@ export async function switchUserCompany(userId: string, companyId: string) {
     throw new Error('USER_NOT_FOUND')
   }
 
-  const hasAccessToCompany = user.memberships.some(
+  const targetMembership = user.memberships.find(
     (membership) => membership.company.id === companyId
   )
 
-  if (!hasAccessToCompany) {
+  if (!targetMembership) {
     throw new Error('COMPANY_ACCESS_DENIED')
+  }
+
+  if (targetMembership.company.isTest && targetMembership.systemRole !== 'ADMIN') {
+    throw new Error('ADMIN_ACCESS_REQUIRED')
   }
 
   const token = jwt.sign(
@@ -241,16 +259,22 @@ export async function getCompaniesForUser(userId: string) {
     orderBy: { createdAt: 'asc' },
   })
 
-  return memberships.map((membership) => ({
-    id: membership.company.id,
-    name: membership.company.name,
-    isTest: membership.company.isTest,
-    role: String(membership.role),
-    systemRole: String(membership.systemRole ?? 'ADMIN') as 'ADMIN' | 'CUSTOM',
-    customRoleId: membership.customRoleId ?? null,
-    customRoleName: membership.customRole?.name ?? null,
-    permissions: membershipPermissions(membership as any),
-  }))
+  return memberships
+    .sort((a, b) => {
+      if (a.company.isTest !== b.company.isTest) return a.company.isTest ? 1 : -1
+      return a.company.name.localeCompare(b.company.name)
+    })
+    .map((membership) => ({
+      id: membership.company.id,
+      name: membership.company.name,
+      isTest: membership.company.isTest,
+      testSourceCompanyId: membership.company.testSourceCompanyId ?? null,
+      role: String(membership.role),
+      systemRole: String(membership.systemRole ?? 'ADMIN') as 'ADMIN' | 'CUSTOM',
+      customRoleId: membership.customRoleId ?? null,
+      customRoleName: membership.customRole?.name ?? null,
+      permissions: membershipPermissions(membership as any),
+    }))
 }
 
 type UpdateMyAccountInput = {

@@ -7,11 +7,41 @@ type CreateTestCompanyInput = {
   copyData: boolean
 }
 
+type DeleteTestCompanyInput = {
+  userId: string
+  companyId: string
+}
+
+async function assertAdminAccess(userId: string, companyId: string) {
+  const membership = await prisma.userCompany.findUnique({
+    where: {
+      userId_companyId: {
+        userId,
+        companyId,
+      },
+    },
+    select: {
+      id: true,
+      systemRole: true,
+    },
+  })
+
+  if (!membership) {
+    throw new Error('COMPANY_ACCESS_DENIED')
+  }
+
+  if (membership.systemRole !== 'ADMIN') {
+    throw new Error('ADMIN_ACCESS_REQUIRED')
+  }
+}
+
 export async function createTestCompanyFromCompany({
   userId,
   sourceCompanyId,
   copyData,
 }: CreateTestCompanyInput) {
+  await assertAdminAccess(userId, sourceCompanyId)
+
   const sourceCompany = await prisma.company.findUnique({
     where: { id: sourceCompanyId },
     include: {
@@ -52,6 +82,22 @@ export async function createTestCompanyFromCompany({
   })
 
   if (existingTestCompany) {
+    await prisma.userCompany.upsert({
+      where: {
+        userId_companyId: {
+          userId,
+          companyId: existingTestCompany.id,
+        },
+      },
+      create: {
+        userId,
+        companyId: existingTestCompany.id,
+        role: 'admin',
+        systemRole: 'ADMIN',
+      },
+      update: {},
+    })
+
     return {
       ok: true,
       alreadyExists: true,
@@ -79,6 +125,16 @@ export async function createTestCompanyFromCompany({
     })
 
     if (!copyData) {
+      await tx.salesEnvironment.create({
+        data: {
+          companyId: newCompany.id,
+          name: 'Default',
+          color: '#dd7c12',
+          isDefault: true,
+          active: true,
+        },
+      })
+
       return newCompany
     }
 
@@ -202,5 +258,36 @@ export async function createTestCompanyFromCompany({
     ok: true,
     alreadyExists: false,
     company: result,
+  }
+}
+
+export async function deleteTestCompany({ userId, companyId }: DeleteTestCompanyInput) {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: {
+      id: true,
+      name: true,
+      isTest: true,
+      testSourceCompanyId: true,
+    },
+  })
+
+  if (!company) {
+    throw new Error('COMPANY_NOT_FOUND')
+  }
+
+  if (!company.isTest) {
+    throw new Error('ONLY_TEST_COMPANY_CAN_BE_DELETED')
+  }
+
+  await assertAdminAccess(userId, company.id)
+
+  await prisma.company.delete({
+    where: { id: company.id },
+  })
+
+  return {
+    ok: true,
+    deletedCompany: company,
   }
 }
