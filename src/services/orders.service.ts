@@ -4,6 +4,8 @@ import { prisma } from '../lib/prisma'
 import { createOrderPrintJobs } from './print-jobs.service'
 import { createAuditLog } from './audit.service'
 
+type OrderPrintMode = 'SEPARATE_ITEMS' | 'GROUPED'
+
 type CreateOrderVariationOptionInput = {
   optionId: string
   priceModifier: Prisma.Decimal | number | string
@@ -39,6 +41,7 @@ type CreateOrderInput = {
   paymentMethod?: PaymentMethod | null
   taxApplied: boolean
   deviceId?: string | null
+  printMode?: OrderPrintMode
   orderItems: CreateOrderItemInput[]
 }
 
@@ -928,7 +931,9 @@ const order = await prisma.$transaction(async (tx: any) => {
   let printJobs: any[] = []
 
   try {
-    printJobs = await createOrderPrintJobs(order.companyId, order.id)
+    printJobs = await createOrderPrintJobs(order.companyId, order.id, {
+      printMode: data.printMode ?? 'SEPARATE_ITEMS',
+    })
 
     console.log('[ORDER PRINT JOBS] Created successfully', {
       orderId: order.id,

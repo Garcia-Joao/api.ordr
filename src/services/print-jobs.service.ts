@@ -4,6 +4,8 @@ const ONLINE_THRESHOLD_MS = 2 * 60 * 1000
 
 type PrintJobStatus = 'PENDING' | 'CLAIMED' | 'PRINTING' | 'PRINTED' | 'FAILED' | 'CANCELLED'
 
+type OrderPrintMode = 'SEPARATE_ITEMS' | 'GROUPED'
+
 type CreatePrintJobInput = {
   companyId: string
   orderId?: string | null
@@ -92,9 +94,11 @@ export async function createPrintJob(input: CreatePrintJobInput) {
   return normalizeJob(job)
 }
 
-function buildOrderPayload(order: any, port: any, items: any[]) {
+function buildOrderPayload(order: any, port: any, items: any[], printMode: OrderPrintMode) {
   return {
+    kind: 'ORDER_TICKET',
     title: 'Pedido',
+    printMode,
     orderId: order.id,
     comanda: order.comanda,
     comandaName: order.comandaName ?? null,
@@ -116,7 +120,31 @@ function buildOrderPayload(order: any, port: any, items: any[]) {
   }
 }
 
-export async function createOrderPrintJobs(companyId: string, orderId: string) {
+
+function expandItemsForPrint(items: any[], printMode: OrderPrintMode) {
+  if (printMode === 'GROUPED') return items
+
+  return items.flatMap((item: any) => {
+    const quantity = Number(item.quantity ?? 1)
+    const wholeQuantity = Math.floor(quantity)
+
+    if (!Number.isFinite(quantity) || quantity <= 1 || wholeQuantity !== quantity) {
+      return [item]
+    }
+
+    return Array.from({ length: wholeQuantity }, () => ({
+      ...item,
+      quantity: 1,
+      totalPrice: item.unitPrice,
+    }))
+  })
+}
+
+export async function createOrderPrintJobs(
+  companyId: string,
+  orderId: string,
+  options?: { printMode?: OrderPrintMode }
+) {
   const order = await prisma.order.findFirst({
     where: { id: orderId, companyId },
     include: {
@@ -131,6 +159,9 @@ export async function createOrderPrintJobs(companyId: string, orderId: string) {
 
   if (!order) throw new Error('ORDER_NOT_FOUND')
 
+  const printMode = options?.printMode ?? 'SEPARATE_ITEMS'
+  const printableItems = expandItemsForPrint(order.items, printMode)
+
   const defaultPort = await prisma.printPort.findFirst({
     where: { companyId, active: true },
     orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
@@ -140,7 +171,7 @@ export async function createOrderPrintJobs(companyId: string, orderId: string) {
   const portIds = new Set<string>()
   const itemsByPort = new Map<string, any[]>()
 
-  for (const item of order.items) {
+  for (const item of printableItems) {
     const productPortId = item.product?.printPortId ?? null
     const categoryPortId = item.product?.category?.printPortId ?? null
     const resolvedPortId = productPortId || categoryPortId || defaultPort?.id || 'unassigned'
@@ -173,7 +204,7 @@ export async function createOrderPrintJobs(companyId: string, orderId: string) {
           terminalDeviceId: null,
           status: 'FAILED',
           errorMessage: port ? 'PRINT_PORT_NOT_BOUND' : 'PRINT_PORT_NOT_FOUND',
-          payload: buildOrderPayload(order, port, items) as any,
+          payload: buildOrderPayload(order, port, items, printMode) as any,
         },
         include: { port: { include: { bindings: true } }, order: true },
       }))
@@ -191,7 +222,7 @@ export async function createOrderPrintJobs(companyId: string, orderId: string) {
           terminalDeviceId,
           status: 'PENDING',
           errorMessage: null,
-          payload: buildOrderPayload(order, port, items) as any,
+          payload: buildOrderPayload(order, port, items, printMode) as any,
         },
         include: { port: { include: { bindings: true } }, order: true },
       }))
