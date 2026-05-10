@@ -20,9 +20,8 @@ import reportsRoutes from './routes/reports.routes'
 import router from './routes/product-cost-history.routes'
 import accessRoutes from './routes/access.routes'
 import auditRoutes from './routes/audit.routes'
-import devicesRoutes from './routes/devices.routes'
-import printJobsRoutes from './routes/print-jobs.routes'
 import adminRouter from './routes/admin.routes'
+import versionRouter from './routes/version.routes'
 
 import { prisma } from './lib/prisma'
 
@@ -33,8 +32,6 @@ const allowedOrigins = [
   'http://localhost:3001',
   'http://127.0.0.1:3000',
   'http://127.0.0.1:3001',
-  'http://localhost:3020',
-  'http://127.0.0.1:3020',
   'http://192.168.15.4:3001',
   'https://panelordr.com.br',
   'https://admin.panelordr.com.br',
@@ -62,7 +59,7 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-company-id', 'x-device-id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-company-id'],
   })
 )
 
@@ -88,6 +85,15 @@ app.get('/health', async (_req, res) => {
   }
 })
 
+app.get('/auth/me', (req, res, next) => {
+  if (!req.cookies?.auth) {
+    return res.status(401).json({ error: 'UNAUTHORIZED' })
+  }
+
+  return next()
+})
+
+app.use('/versionCheck', versionRouter)
 app.use('/admin', adminRouter)
 app.use('/auth', authRouter)
 app.use('/products', productsRouter)
@@ -107,7 +113,5 @@ app.use('/reports', reportsRoutes)
 app.use('/product-cost-history', router)
 app.use('/access', accessRoutes)
 app.use('/audit', auditRoutes)
-app.use('/devices', devicesRoutes)
-app.use('/print-jobs', printJobsRoutes)
 
 export default app
