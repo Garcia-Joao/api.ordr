@@ -128,6 +128,48 @@ export async function switchCompany(req: AuthRequest, res: Response) {
   }
 }
 
+export async function createTerminalLaunchToken(req: AuthRequest, res: Response) {
+  try {
+    const userId = req.user?.id
+    const companyId = req.user?.companyId
+
+    if (!userId || !companyId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const token = authService.createTerminalLaunchToken({
+      userId,
+      companyId,
+    })
+
+    return res.json({ launchToken: token })
+  } catch (error: any) {
+    return res.status(500).json({ error: error?.message || 'Erro ao gerar token do terminal.' })
+  }
+}
+
+export async function terminalLogin(req: Request, res: Response) {
+  try {
+    const launchToken = typeof req.body?.launchToken === 'string'
+      ? req.body.launchToken
+      : null
+
+    if (!launchToken) {
+      return res.status(400).json({ error: 'launchToken é obrigatório.' })
+    }
+
+    const result = await authService.loginTerminalWithLaunchToken(launchToken)
+
+    return res.json(result)
+  } catch (error: any) {
+    if (error?.message === 'INVALID_TERMINAL_TOKEN') {
+      return res.status(401).json({ error: 'Token do terminal inválido ou expirado.' })
+    }
+
+    return res.status(500).json({ error: error?.message || 'Erro ao conectar terminal.' })
+  }
+}
+
 export async function updateMe(req: AuthRequest, res: Response) {
   try {
     const userId = req.user?.id

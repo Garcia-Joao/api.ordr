@@ -3,7 +3,7 @@ import jwt from 'jsonwebtoken'
 import { prisma } from '../lib/prisma'
 import { ALL_PERMISSION_KEYS } from '../auth/permissions'
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-this'
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret'
 
 type LicenseInfo = {
   licenseActive: boolean
@@ -227,6 +227,87 @@ const userMembershipInclude = {
     },
   },
   customRole: { include: { permissions: true } },
+}
+
+export function createTerminalLaunchToken(input: {
+  userId: string
+  companyId: string
+}) {
+  return jwt.sign(
+    {
+      sub: input.userId,
+      companyId: input.companyId,
+      purpose: 'terminal-launch',
+    },
+    JWT_SECRET,
+    { expiresIn: '2m' }
+  )
+}
+
+export async function loginTerminalWithLaunchToken(launchToken: string) {
+  try {
+    const decoded = jwt.verify(launchToken, JWT_SECRET) as {
+      sub: string
+      companyId: string
+      purpose?: string
+    }
+
+    if (decoded.purpose !== 'terminal-launch') {
+      throw new Error('INVALID_TERMINAL_TOKEN')
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.sub },
+      include: {
+        memberships: {
+          where: {
+            companyId: decoded.companyId,
+          },
+          include: {
+            company: true,
+          },
+        },
+      },
+    })
+
+    if (!user) throw new Error('INVALID_TERMINAL_TOKEN')
+
+    const membership = user.memberships[0]
+    if (!membership) throw new Error('INVALID_TERMINAL_TOKEN')
+
+    const token = jwt.sign(
+      {
+        id: user.id,
+        companyId: decoded.companyId,
+      },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    )
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        name: user.name,
+        companyId: decoded.companyId,
+        currentCompany: {
+          id: membership.company.id,
+          name: membership.company.name,
+          isTest: membership.company.isTest,
+          systemRole: membership.systemRole,
+        },
+        companies: user.memberships.map((item) => ({
+          id: item.company.id,
+          name: item.company.name,
+          isTest: item.company.isTest,
+          systemRole: item.systemRole,
+        })),
+      },
+    }
+  } catch {
+    throw new Error('INVALID_TERMINAL_TOKEN')
+  }
 }
 
 export async function loginUser(username: string, password: string) {
