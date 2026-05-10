@@ -11,6 +11,17 @@ type CreateAdminUserInput = {
   name?: string | null
 }
 
+type CreateUserInput = {
+  username: string
+  password: string
+  name?: string | null
+  phone?: string | null
+  companyId?: string | null
+  systemRole?: 'ADMIN' | 'CUSTOM'
+  customRoleId?: string | null
+  role?: 'admin' | 'cashier' | 'waiter'
+}
+
 type LoginAdminInput = {
   username: string
   password: string
@@ -185,6 +196,117 @@ export async function createAdminUser(input: CreateAdminUserInput) {
   return {
     ok: true,
     admin,
+  }
+}
+
+
+export async function createUser(input: CreateUserInput) {
+  const username = input.username.trim()
+
+  if (!username) {
+    throw new Error('USERNAME_REQUIRED')
+  }
+
+  if (!input.password || input.password.length < 6) {
+    throw new Error('PASSWORD_MIN_LENGTH')
+  }
+
+  const existingUser = await prisma.user.findUnique({
+    where: { username },
+    select: { id: true },
+  })
+
+  if (existingUser) {
+    throw new Error('USERNAME_ALREADY_EXISTS')
+  }
+
+  const company = input.companyId
+    ? await prisma.company.findUnique({
+        where: { id: input.companyId },
+        select: { id: true },
+      })
+    : null
+
+  if (input.companyId && !company) {
+    throw new Error('COMPANY_NOT_FOUND')
+  }
+
+  const resolved = input.companyId
+    ? await resolveMembershipRole(input.companyId, input.systemRole ?? 'ADMIN', input.customRoleId ?? null)
+    : null
+
+  const password = await bcrypt.hash(input.password, 10)
+
+  const createdUser = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        username,
+        password,
+        name: input.name ?? null,
+        phone: input.phone ?? null,
+        role: input.role ?? resolved?.role ?? 'cashier',
+      },
+    })
+
+    if (input.companyId && resolved) {
+      await tx.userCompany.create({
+        data: {
+          userId: user.id,
+          companyId: input.companyId,
+          role: input.role ?? resolved.role,
+          systemRole: resolved.systemRole,
+          customRoleId: resolved.customRoleId,
+        },
+      })
+    }
+
+    return user
+  })
+
+  const user = await prisma.user.findUnique({
+    where: { id: createdUser.id },
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      phone: true,
+      photoBase64: true,
+      createdAt: true,
+      role: true,
+      memberships: {
+        include: {
+          company: {
+            select: {
+              id: true,
+              name: true,
+              isTest: true,
+              platformAccessStatus: true,
+            },
+          },
+          customRole: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              active: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: 'asc',
+        },
+      },
+      _count: {
+        select: {
+          memberships: true,
+        },
+      },
+    },
+  })
+
+  return {
+    ok: true,
+    user,
   }
 }
 

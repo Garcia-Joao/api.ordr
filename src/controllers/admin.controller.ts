@@ -2,9 +2,9 @@ import { Request, Response } from 'express'
 import {
   ADMIN_COOKIE_NAME,
   assignCompanyLicense,
-  createAdminUser,
   createCompanyWithInitialAccess,
   createLicensePlan,
+  createUser,
   getAdminMe,
   deleteCompanyMembership,
   getCompany,
@@ -91,11 +91,11 @@ export async function adminMeController(req: AdminAuthRequest, res: Response) {
 
 export async function adminCreateUserController(req: AdminAuthRequest, res: Response) {
   try {
-    const result = await createAdminUser(req.body)
+    const result = await createUser(req.body)
 
     return res.status(201).json(result)
   } catch (error: any) {
-    console.error('[admin] create user error:', error)
+    console.error('[admin] create app user error:', error)
 
     return res.status(400).json({
       error: error?.message || 'ADMIN_CREATE_USER_ERROR',

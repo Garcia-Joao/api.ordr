@@ -8,8 +8,13 @@ exports.adminListLicensePlansController = adminListLicensePlansController;
 exports.adminCreateLicensePlanController = adminCreateLicensePlanController;
 exports.adminUpdateLicensePlanController = adminUpdateLicensePlanController;
 exports.adminListCompaniesController = adminListCompaniesController;
+exports.adminListUsersController = adminListUsersController;
 exports.adminGetCompanyController = adminGetCompanyController;
 exports.adminCreateCompanyController = adminCreateCompanyController;
+exports.adminUpdateCompanyController = adminUpdateCompanyController;
+exports.adminUpsertCompanyMembershipController = adminUpsertCompanyMembershipController;
+exports.adminUpdateCompanyMembershipController = adminUpdateCompanyMembershipController;
+exports.adminDeleteCompanyMembershipController = adminDeleteCompanyMembershipController;
 exports.adminUpdateCompanyAccessController = adminUpdateCompanyAccessController;
 exports.adminAssignCompanyLicenseController = adminAssignCompanyLicenseController;
 const admin_service_1 = require("../services/admin.service");
@@ -71,11 +76,11 @@ async function adminMeController(req, res) {
 }
 async function adminCreateUserController(req, res) {
     try {
-        const result = await (0, admin_service_1.createAdminUser)(req.body);
+        const result = await (0, admin_service_1.createUser)(req.body);
         return res.status(201).json(result);
     }
     catch (error) {
-        console.error('[admin] create user error:', error);
+        console.error('[admin] create app user error:', error);
         return res.status(400).json({
             error: error?.message || 'ADMIN_CREATE_USER_ERROR',
         });
@@ -133,6 +138,18 @@ async function adminListCompaniesController(_req, res) {
         });
     }
 }
+async function adminListUsersController(_req, res) {
+    try {
+        const result = await (0, admin_service_1.listUsers)();
+        return res.json(result);
+    }
+    catch (error) {
+        console.error('[admin] list users error:', error);
+        return res.status(500).json({
+            error: error?.message || 'ADMIN_LIST_USERS_ERROR',
+        });
+    }
+}
 async function adminGetCompanyController(req, res) {
     try {
         const companyId = getParam(req.params.companyId, 'companyId');
@@ -158,6 +175,57 @@ async function adminCreateCompanyController(req, res) {
         console.error('[admin] create company error:', error);
         return res.status(400).json({
             error: error?.message || 'ADMIN_CREATE_COMPANY_ERROR',
+        });
+    }
+}
+async function adminUpdateCompanyController(req, res) {
+    try {
+        const companyId = getParam(req.params.companyId, 'companyId');
+        const result = await (0, admin_service_1.updateCompany)(companyId, req.body);
+        return res.json(result);
+    }
+    catch (error) {
+        console.error('[admin] update company error:', error);
+        return res.status(400).json({
+            error: error?.message || 'ADMIN_UPDATE_COMPANY_ERROR',
+        });
+    }
+}
+async function adminUpsertCompanyMembershipController(req, res) {
+    try {
+        const result = await (0, admin_service_1.upsertCompanyMembership)(req.body);
+        return res.status(201).json(result);
+    }
+    catch (error) {
+        console.error('[admin] upsert company membership error:', error);
+        return res.status(400).json({
+            error: error?.message || 'ADMIN_UPSERT_COMPANY_MEMBERSHIP_ERROR',
+        });
+    }
+}
+async function adminUpdateCompanyMembershipController(req, res) {
+    try {
+        const membershipId = getParam(req.params.membershipId, 'membershipId');
+        const result = await (0, admin_service_1.updateCompanyMembership)(membershipId, req.body);
+        return res.json(result);
+    }
+    catch (error) {
+        console.error('[admin] update company membership error:', error);
+        return res.status(400).json({
+            error: error?.message || 'ADMIN_UPDATE_COMPANY_MEMBERSHIP_ERROR',
+        });
+    }
+}
+async function adminDeleteCompanyMembershipController(req, res) {
+    try {
+        const membershipId = getParam(req.params.membershipId, 'membershipId');
+        const result = await (0, admin_service_1.deleteCompanyMembership)(membershipId);
+        return res.json(result);
+    }
+    catch (error) {
+        console.error('[admin] delete company membership error:', error);
+        return res.status(400).json({
+            error: error?.message || 'ADMIN_DELETE_COMPANY_MEMBERSHIP_ERROR',
         });
     }
 }
