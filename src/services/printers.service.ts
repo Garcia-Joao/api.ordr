@@ -12,6 +12,8 @@ export type PrintPortInput = {
   description?: string | null
   active?: boolean
   sortOrder?: number | null
+
+  // Used only by the Electron Terminal binding flow.
   terminalDeviceId?: string | null
   localPrinterName?: string | null
   localPrinterLabel?: string | null
@@ -138,8 +140,6 @@ export async function createPrintPort(companyId: string, input: PrintPortInput) 
   const name = cleanText(input.name)
   if (!name) throw new Error('PRINT_PORT_NAME_REQUIRED')
 
-  const terminalDeviceId = await assertPortDevice(companyId, input.terminalDeviceId)
-
   const port = await prisma.printPort.create({
     data: {
       companyId,
@@ -147,10 +147,13 @@ export async function createPrintPort(companyId: string, input: PrintPortInput) 
       description: cleanText(input.description),
       active: input.active ?? true,
       sortOrder: Number(input.sortOrder ?? 0),
-      terminalDeviceId,
-      localPrinterName: cleanText(input.localPrinterName),
-      localPrinterLabel: cleanText(input.localPrinterLabel),
-      paperWidth: input.paperWidth ? Number(input.paperWidth) : null,
+
+      // Do not set terminal/printer fields here.
+      // Physical binding is done later by the Electron Terminal.
+      //
+      // Also do not send paperWidth here. Some existing production DBs still
+      // have paperWidth as NOT NULL with default 80, so omitting it lets the DB
+      // default apply and avoids null constraint errors.
     },
     include: {
       terminalDevice: {
@@ -168,11 +171,6 @@ export async function updatePrintPort(companyId: string, portId: string, input: 
   const existing = await prisma.printPort.findFirst({ where: { id: portId, companyId } })
   if (!existing) throw new Error('PRINT_PORT_NOT_FOUND')
 
-  const terminalDeviceId =
-    input.terminalDeviceId === undefined
-      ? existing.terminalDeviceId
-      : await assertPortDevice(companyId, input.terminalDeviceId)
-
   const port = await prisma.printPort.update({
     where: { id: portId },
     data: {
@@ -180,10 +178,8 @@ export async function updatePrintPort(companyId: string, portId: string, input: 
       ...(input.description !== undefined ? { description: cleanText(input.description) } : {}),
       ...(input.active !== undefined ? { active: Boolean(input.active) } : {}),
       ...(input.sortOrder !== undefined ? { sortOrder: Number(input.sortOrder ?? 0) } : {}),
-      ...(input.terminalDeviceId !== undefined ? { terminalDeviceId } : {}),
-      ...(input.localPrinterName !== undefined ? { localPrinterName: cleanText(input.localPrinterName) } : {}),
-      ...(input.localPrinterLabel !== undefined ? { localPrinterLabel: cleanText(input.localPrinterLabel) } : {}),
-      ...(input.paperWidth !== undefined ? { paperWidth: input.paperWidth ? Number(input.paperWidth) : null } : {}),
+
+      // Regular web editing should not touch physical terminal binding fields.
     },
     include: {
       terminalDevice: {
@@ -206,12 +202,43 @@ export async function deletePrintPort(companyId: string, portId: string) {
 }
 
 export async function bindPrintPort(companyId: string, portId: string, input: PrintPortInput) {
-  return updatePrintPort(companyId, portId, {
-    terminalDeviceId: input.terminalDeviceId ?? null,
-    localPrinterName: input.localPrinterName ?? null,
-    localPrinterLabel: input.localPrinterLabel ?? null,
-    paperWidth: input.paperWidth ?? null,
+  const existing = await prisma.printPort.findFirst({ where: { id: portId, companyId } })
+  if (!existing) throw new Error('PRINT_PORT_NOT_FOUND')
+
+  const terminalDeviceId = await assertPortDevice(companyId, input.terminalDeviceId)
+
+  const localPrinterName = cleanText(input.localPrinterName)
+  const localPrinterLabel = cleanText(input.localPrinterLabel)
+
+  const shouldClearBinding = !terminalDeviceId || !localPrinterName
+
+  const port = await prisma.printPort.update({
+    where: { id: portId },
+    data: shouldClearBinding
+      ? {
+          terminalDeviceId: null,
+          localPrinterName: null,
+          localPrinterLabel: null,
+          // Do not set paperWidth to null; keep current/default value.
+        }
+      : {
+          terminalDeviceId,
+          localPrinterName,
+          localPrinterLabel,
+          ...(input.paperWidth !== undefined && input.paperWidth !== null
+            ? { paperWidth: Number(input.paperWidth) }
+            : {}),
+        },
+    include: {
+      terminalDevice: {
+        include: {
+          currentUser: { select: { id: true, username: true, name: true } },
+        },
+      },
+    },
   })
+
+  return normalizePort(port)
 }
 
 export async function getPrinterSettings(companyId?: string) {

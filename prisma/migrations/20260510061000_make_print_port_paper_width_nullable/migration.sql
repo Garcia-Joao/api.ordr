@@ -1,0 +1,2 @@
+ALTER TABLE "PrintPort"
+  ALTER COLUMN "paperWidth" DROP NOT NULL;
