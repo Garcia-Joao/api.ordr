@@ -33,12 +33,15 @@ const allowedOrigins = [
     'http://localhost:3001',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
+    'http://localhost:3020',
+    'http://127.0.0.1:3020',
     'http://192.168.15.4:3001',
     'https://panelordr.com.br',
     'https://admin.panelordr.com.br',
     process.env.FRONTEND_URL,
     process.env.FRONTEND_LAN_URL,
     process.env.ADMIN_FRONTEND_URL,
+    process.env.TERMINAL_FRONTEND_URL,
 ].filter(Boolean);
 app.use((req, _res, next) => {
     console.log('[request]', req.method, req.path, 'origin:', req.headers.origin);

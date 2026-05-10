@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.heartbeatDevice = heartbeatDevice;
 exports.listCompanyDevices = listCompanyDevices;
 exports.deleteCompanyDevice = deleteCompanyDevice;
+const client_1 = require("@prisma/client");
 const prisma_1 = require("../lib/prisma");
 const ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
 function normalizeDeviceType(value) {
@@ -15,9 +16,32 @@ function normalizeDeviceType(value) {
         return 'TABLET';
     return 'UNKNOWN';
 }
+function normalizeClientType(value) {
+    return String(value ?? '').toUpperCase() === 'ELECTRON' ? 'ELECTRON' : 'WEB';
+}
 function cleanText(value, fallback = '') {
     const text = String(value ?? '').trim();
     return text || fallback;
+}
+function sanitizeLocalPrinters(value) {
+    if (!Array.isArray(value))
+        return null;
+    return value
+        .slice(0, 50)
+        .map((printer) => ({
+        name: cleanText(printer?.name, ''),
+        displayName: cleanText(printer?.displayName, '') || null,
+        description: cleanText(printer?.description, '') || null,
+        isDefault: Boolean(printer?.isDefault),
+    }))
+        .filter((printer) => printer.name);
+}
+async function userIsCompanyAdmin(userId, companyId) {
+    const membership = await prisma_1.prisma.userCompany.findUnique({
+        where: { userId_companyId: { userId, companyId } },
+        select: { systemRole: true },
+    });
+    return membership?.systemRole === 'ADMIN';
 }
 function getStartOfToday() {
     const date = new Date();
@@ -32,11 +56,21 @@ function getDeviceStatus(lastSeenAt) {
 async function heartbeatDevice(input) {
     const now = new Date();
     const id = cleanText(input.deviceId, '');
+    const clientType = normalizeClientType(input.clientType);
+    const requestedPrintTerminal = Boolean(input.isPrintTerminal || input.printTerminalEnabled);
+    const canEnablePrintTerminal = clientType === 'ELECTRON' && requestedPrintTerminal
+        ? await userIsCompanyAdmin(input.userId, input.companyId)
+        : false;
     const baseData = {
         companyId: input.companyId,
         currentUserId: input.userId,
         name: cleanText(input.name, 'Dispositivo sem nome'),
         type: normalizeDeviceType(input.type),
+        clientType,
+        isPrintTerminal: canEnablePrintTerminal,
+        printTerminalEnabled: canEnablePrintTerminal,
+        terminalApprovedAt: canEnablePrintTerminal ? now : null,
+        localPrinters: clientType === 'ELECTRON' ? sanitizeLocalPrinters(input.localPrinters) ?? client_1.Prisma.JsonNull : client_1.Prisma.JsonNull,
         browser: cleanText(input.browser, '') || null,
         os: cleanText(input.os, '') || null,
         userAgent: cleanText(input.userAgent, '') || null,
@@ -65,6 +99,10 @@ async function heartbeatDevice(input) {
         id: device.id,
         name: device.name,
         type: device.type,
+        clientType: device.clientType,
+        isPrintTerminal: device.isPrintTerminal,
+        printTerminalEnabled: device.printTerminalEnabled,
+        localPrinters: device.localPrinters,
         status: getDeviceStatus(device.lastSeenAt),
         lastSeenAt: device.lastSeenAt.toISOString(),
         currentUser: device.currentUser,
@@ -119,6 +157,11 @@ async function listCompanyDevices(companyId) {
             os: device.os,
             userAgent: device.userAgent,
             ipAddress: device.ipAddress,
+            clientType: device.clientType,
+            isPrintTerminal: device.isPrintTerminal,
+            printTerminalEnabled: device.printTerminalEnabled,
+            localPrinters: device.localPrinters,
+            terminalApprovedAt: device.terminalApprovedAt?.toISOString() ?? null,
             firstSeenAt: device.firstSeenAt.toISOString(),
             lastSeenAt: device.lastSeenAt.toISOString(),
             status: getDeviceStatus(device.lastSeenAt),

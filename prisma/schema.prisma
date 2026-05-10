@@ -46,6 +46,11 @@ enum DeviceType {
   UNKNOWN
 }
 
+enum DeviceClientType {
+  WEB
+  ELECTRON
+}
+
 
 model Company {
   id        String   @id @default(cuid())
@@ -999,17 +1004,22 @@ model LicensePlan {
 }
 
 model Device {
-  id            String     @id @default(cuid())
-  companyId     String
-  name          String
-  type          DeviceType @default(UNKNOWN)
-  browser       String?
-  os            String?
-  userAgent     String?
-  ipAddress     String?
-  firstSeenAt   DateTime   @default(now())
-  lastSeenAt    DateTime   @default(now())
-  currentUserId String?
+  id                   String           @id @default(cuid())
+  companyId            String
+  name                 String
+  type                 DeviceType       @default(UNKNOWN)
+  clientType           DeviceClientType @default(WEB)
+  isPrintTerminal      Boolean          @default(false)
+  printTerminalEnabled Boolean          @default(false)
+  localPrinters        Json?
+  browser              String?
+  os                   String?
+  userAgent            String?
+  ipAddress            String?
+  firstSeenAt          DateTime         @default(now())
+  lastSeenAt           DateTime         @default(now())
+  terminalApprovedAt   DateTime?
+  currentUserId        String?
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
@@ -1021,6 +1031,9 @@ model Device {
   @@index([currentUserId])
   @@index([lastSeenAt])
   @@index([type])
+  @@index([clientType])
+  @@index([isPrintTerminal])
+  @@index([printTerminalEnabled])
 }
 
 model CompanyLicense {

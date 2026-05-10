@@ -77,6 +77,10 @@ async function heartbeat(req, res) {
             userAgent: getStringValue(req.body?.userAgent) ??
                 getStringValue(req.headers['user-agent']),
             ipAddress: getIpAddress(req),
+            clientType: getStringValue(req.body?.clientType),
+            isPrintTerminal: Boolean(req.body?.isPrintTerminal),
+            printTerminalEnabled: Boolean(req.body?.printTerminalEnabled),
+            localPrinters: Array.isArray(req.body?.localPrinters) ? req.body.localPrinters : null,
         });
         return res.json({ device: result });
     }
