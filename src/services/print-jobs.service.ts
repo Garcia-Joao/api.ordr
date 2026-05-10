@@ -127,16 +127,37 @@ function normalizeOrderItemForPayload(item: any, quantityOverride?: number) {
   }
 }
 
-function buildTicketsForItem(item: any, mode: PrintItemMode) {
+function buildSeparateTicketsForItem(item: any) {
   const quantity = Number(item.quantity ?? 1)
+  const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1
 
-  if (mode === 'GROUPED' || !Number.isFinite(quantity) || quantity <= 1) {
-    return [{ items: [normalizeOrderItemForPayload(item)] }]
-  }
-
-  return Array.from({ length: Math.max(1, Math.floor(quantity)) }, () => ({
+  return Array.from({ length: Math.max(1, safeQuantity) }, () => ({
+    mode: 'SEPARATE' as const,
     items: [normalizeOrderItemForPayload(item, 1)],
   }))
+}
+
+function buildTicketsForPortItems(itemsWithModes: Array<{ item: any; mode: PrintItemMode }>) {
+  const tickets: any[] = []
+  const groupedItems: any[] = []
+
+  for (const { item, mode } of itemsWithModes) {
+    if (mode === 'GROUPED') {
+      groupedItems.push(normalizeOrderItemForPayload(item))
+      continue
+    }
+
+    tickets.push(...buildSeparateTicketsForItem(item))
+  }
+
+  if (groupedItems.length > 0) {
+    tickets.unshift({
+      mode: 'GROUPED' as const,
+      items: groupedItems,
+    })
+  }
+
+  return tickets
 }
 
 function buildOrderPayload(order: any, port: any, tickets: any[]) {
@@ -182,7 +203,7 @@ export async function createOrderPrintJobs(
   })
 
   const portIds = new Set<string>()
-  const ticketsByPort = new Map<string, any[]>()
+  const itemsByPort = new Map<string, Array<{ item: any; mode: PrintItemMode }>>()
 
   for (const item of order.items) {
     const productPortId = item.product?.printPortId ?? null
@@ -190,12 +211,11 @@ export async function createOrderPrintJobs(
     const resolvedPortId = productPortId || categoryPortId || defaultPort?.id || 'unassigned'
     const itemKey = getOrderItemPrintKey(item)
     const mode = options.itemPrintModes?.get(itemKey) ?? 'SEPARATE'
-    const itemTickets = buildTicketsForItem(item, mode)
 
     portIds.add(resolvedPortId)
-    ticketsByPort.set(resolvedPortId, [
-      ...(ticketsByPort.get(resolvedPortId) ?? []),
-      ...itemTickets,
+    itemsByPort.set(resolvedPortId, [
+      ...(itemsByPort.get(resolvedPortId) ?? []),
+      { item, mode },
     ])
   }
 
@@ -207,8 +227,9 @@ export async function createOrderPrintJobs(
   const portsById = new Map(ports.map((port) => [port.id, port]))
   const jobs = []
 
-  for (const [portId, tickets] of ticketsByPort.entries()) {
+  for (const [portId, itemsWithModes] of itemsByPort.entries()) {
     const port = portsById.get(portId) ?? null
+    const tickets = buildTicketsForPortItems(itemsWithModes)
     const bindings = (port?.bindings ?? []).filter((binding: any) =>
       binding.terminalDevice?.printTerminalEnabled &&
       binding.terminalDevice?.clientType === 'ELECTRON' &&
