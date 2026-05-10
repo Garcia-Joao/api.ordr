@@ -7,7 +7,6 @@ const adminRouter = (0, express_1.Router)();
 adminRouter.post('/auth/login', admin_controller_1.adminLoginController);
 adminRouter.post('/auth/logout', admin_controller_1.adminLogoutController);
 adminRouter.get('/auth/me', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminMeController);
-adminRouter.get('/users', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminListUsersController);
 adminRouter.post('/users', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminCreateUserController);
 adminRouter.get('/license-plans', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminListLicensePlansController);
 adminRouter.post('/license-plans', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminCreateLicensePlanController);
@@ -15,10 +14,6 @@ adminRouter.put('/license-plans/:id', admin_auth_middleware_1.requirePlatformAdm
 adminRouter.get('/companies', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminListCompaniesController);
 adminRouter.post('/companies', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminCreateCompanyController);
 adminRouter.get('/companies/:companyId', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminGetCompanyController);
-adminRouter.patch('/companies/:companyId', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminUpdateCompanyController);
 adminRouter.patch('/companies/:companyId/access', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminUpdateCompanyAccessController);
 adminRouter.post('/companies/:companyId/license', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminAssignCompanyLicenseController);
-adminRouter.post('/company-memberships', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminUpsertCompanyMembershipController);
-adminRouter.patch('/company-memberships/:membershipId', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminUpdateCompanyMembershipController);
-adminRouter.delete('/company-memberships/:membershipId', admin_auth_middleware_1.requirePlatformAdmin, admin_controller_1.adminDeleteCompanyMembershipController);
 exports.default = adminRouter;

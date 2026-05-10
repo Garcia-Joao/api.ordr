@@ -6,5 +6,4 @@ const require_permission_middleware_1 = require("../middleware/require-permissio
 const companies_controller_1 = require("../controllers/companies.controller");
 const router = (0, express_1.Router)();
 router.post('/create-test-company', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('settings.update'), companies_controller_1.createTestCompany);
-router.delete('/test-company/:companyId', auth_middleware_1.requireAuth, companies_controller_1.deleteTestCompany);
 exports.default = router;

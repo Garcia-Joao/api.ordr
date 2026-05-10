@@ -40,17 +40,10 @@ function toSafeUser(user, activeCompanyId) {
         activeEventDateId: activeMembership?.activeEventDateId ?? null,
         permissions: activePermissions,
         companyId: activeCompanyId,
-        companies: [...user.memberships]
-            .sort((a, b) => {
-            if (a.company.isTest !== b.company.isTest)
-                return a.company.isTest ? 1 : -1;
-            return a.company.name.localeCompare(b.company.name);
-        })
-            .map((membership) => ({
+        companies: user.memberships.map((membership) => ({
             id: membership.company.id,
             name: membership.company.name,
             isTest: membership.company.isTest,
-            testSourceCompanyId: membership.company.testSourceCompanyId ?? null,
             role: String(membership.role),
             systemRole: String(membership.systemRole ?? 'ADMIN'),
             customRoleId: membership.customRoleId ?? null,
@@ -80,8 +73,7 @@ async function loginUser(username, password) {
     if (user.memberships.length === 0) {
         throw new Error('USER_WITHOUT_COMPANY');
     }
-    const activeCompanyId = user.memberships.find((membership) => !membership.company.isTest)?.company.id ??
-        user.memberships[0].company.id;
+    const activeCompanyId = user.memberships[0].company.id;
     const safeUser = toSafeUser(user, activeCompanyId);
     const token = jsonwebtoken_1.default.sign({
         sub: user.id,
@@ -108,12 +100,9 @@ async function getUserFromToken(token) {
     if (!user) {
         throw new Error('USER_NOT_FOUND');
     }
-    const activeMembership = user.memberships.find((membership) => membership.company.id === decoded.companyId);
-    if (!activeMembership) {
+    const hasAccessToCompany = user.memberships.some((membership) => membership.company.id === decoded.companyId);
+    if (!hasAccessToCompany) {
         throw new Error('COMPANY_ACCESS_DENIED');
-    }
-    if (activeMembership.company.isTest && activeMembership.systemRole !== 'ADMIN') {
-        throw new Error('ADMIN_ACCESS_REQUIRED');
     }
     return toSafeUser(user, decoded.companyId);
 }
@@ -129,12 +118,9 @@ async function switchUserCompany(userId, companyId) {
     if (!user) {
         throw new Error('USER_NOT_FOUND');
     }
-    const targetMembership = user.memberships.find((membership) => membership.company.id === companyId);
-    if (!targetMembership) {
+    const hasAccessToCompany = user.memberships.some((membership) => membership.company.id === companyId);
+    if (!hasAccessToCompany) {
         throw new Error('COMPANY_ACCESS_DENIED');
-    }
-    if (targetMembership.company.isTest && targetMembership.systemRole !== 'ADMIN') {
-        throw new Error('ADMIN_ACCESS_REQUIRED');
     }
     const token = jsonwebtoken_1.default.sign({
         sub: user.id,
@@ -154,17 +140,10 @@ async function getCompaniesForUser(userId) {
         include: { company: true, customRole: { include: { permissions: true } } },
         orderBy: { createdAt: 'asc' },
     });
-    return memberships
-        .sort((a, b) => {
-        if (a.company.isTest !== b.company.isTest)
-            return a.company.isTest ? 1 : -1;
-        return a.company.name.localeCompare(b.company.name);
-    })
-        .map((membership) => ({
+    return memberships.map((membership) => ({
         id: membership.company.id,
         name: membership.company.name,
         isTest: membership.company.isTest,
-        testSourceCompanyId: membership.company.testSourceCompanyId ?? null,
         role: String(membership.role),
         systemRole: String(membership.systemRole ?? 'ADMIN'),
         customRoleId: membership.customRoleId ?? null,

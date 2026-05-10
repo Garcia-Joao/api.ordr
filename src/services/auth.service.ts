@@ -5,7 +5,20 @@ import { ALL_PERMISSION_KEYS } from '../auth/permissions'
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-this'
 
-type SafeCompany = {
+type LicenseInfo = {
+  licenseActive: boolean
+  licenseStatus: string
+  licensePlanName: string | null
+  licenseStartsAt: string | null
+  licenseEndsAt: string | null
+  licenseDaysRemaining: number | null
+  platformAccessStatus: string
+  platformBlockedReason: string | null
+  licenseSourceCompanyId: string | null
+  licenseSourceCompanyName: string | null
+}
+
+type SafeCompany = LicenseInfo & {
   id: string
   name: string
   isTest: boolean
@@ -31,6 +44,7 @@ export type SafeUser = {
   activeEventDateId: string | null
   permissions: string[]
   companyId: string
+  currentCompany: SafeCompany | null
   companies: SafeCompany[]
 }
 
@@ -53,13 +67,90 @@ type UserWithMemberships = {
       permissions: Array<{ permissionKey: string }>
     } | null
     activeEventDateId?: string | null
-    company: {
-      id: string
-      name: string
-      isTest: boolean
-      testSourceCompanyId: string | null
-    }
+    company: any
   }>
+}
+
+function getDaysRemaining(endsAt: Date | string | null | undefined) {
+  if (!endsAt) return null
+
+  const end = new Date(endsAt).getTime()
+  if (Number.isNaN(end)) return null
+
+  const diff = end - Date.now()
+  return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
+}
+
+function resolveCompanyLicenseInfo(company: any): LicenseInfo {
+  const sourceCompany = company?.isTest && company?.testSourceCompany
+    ? company.testSourceCompany
+    : company
+  const now = new Date()
+  const licenses = Array.isArray(sourceCompany?.platformLicenses)
+    ? sourceCompany.platformLicenses
+    : []
+
+  const activeLicense = licenses.find((license: any) => {
+    const startsAt = license.startsAt ? new Date(license.startsAt) : null
+    const endsAt = license.endsAt ? new Date(license.endsAt) : null
+
+    return (
+      String(license.status) === 'ACTIVE' &&
+      (!startsAt || startsAt <= now) &&
+      (!endsAt || endsAt > now)
+    )
+  })
+
+  const displayLicense = activeLicense ?? licenses[0] ?? null
+  const platformAccessStatus = String(sourceCompany?.platformAccessStatus ?? 'ACTIVE')
+  const licenseActive = platformAccessStatus === 'ACTIVE' && Boolean(activeLicense)
+
+  return {
+    licenseActive,
+    licenseStatus: licenseActive
+      ? 'ACTIVE'
+      : platformAccessStatus !== 'ACTIVE'
+        ? platformAccessStatus
+        : displayLicense?.status
+          ? String(displayLicense.status)
+          : 'INACTIVE',
+    licensePlanName: displayLicense?.plan?.name ?? null,
+    licenseStartsAt: displayLicense?.startsAt
+      ? new Date(displayLicense.startsAt).toISOString()
+      : null,
+    licenseEndsAt: displayLicense?.endsAt
+      ? new Date(displayLicense.endsAt).toISOString()
+      : null,
+    licenseDaysRemaining: getDaysRemaining(displayLicense?.endsAt ?? null),
+    platformAccessStatus,
+    platformBlockedReason: sourceCompany?.platformBlockedReason ?? null,
+    licenseSourceCompanyId: sourceCompany?.id ?? null,
+    licenseSourceCompanyName: sourceCompany?.name ?? null,
+  }
+}
+
+function membershipToSafeCompany(
+  membership: UserWithMemberships['memberships'][number]
+): SafeCompany {
+  const systemRole = String(membership.systemRole ?? 'ADMIN') as 'ADMIN' | 'CUSTOM'
+
+  return {
+    id: membership.company.id,
+    name: membership.company.name,
+    isTest: membership.company.isTest,
+    testSourceCompanyId: membership.company.testSourceCompanyId ?? null,
+    role: String(membership.role),
+    systemRole,
+    customRoleId: membership.customRoleId ?? null,
+    customRoleName: membership.customRole?.name ?? null,
+    activeEventDateId: membership.activeEventDateId ?? null,
+    permissions: membershipPermissions(membership),
+    ...resolveCompanyLicenseInfo(membership.company),
+  }
+}
+
+function canAccessMembershipCompany(membership: UserWithMemberships['memberships'][number]) {
+  return resolveCompanyLicenseInfo(membership.company).licenseActive
 }
 
 function membershipPermissions(
@@ -77,6 +168,12 @@ function membershipPermissions(
 }
 
 function toSafeUser(user: UserWithMemberships, activeCompanyId: string): SafeUser {
+  const sortedMemberships = [...user.memberships].sort((a, b) => {
+    if (a.company.isTest !== b.company.isTest) return a.company.isTest ? 1 : -1
+    return a.company.name.localeCompare(b.company.name)
+  })
+
+  const safeCompanies = sortedMemberships.map(membershipToSafeCompany)
   const activeMembership =
     user.memberships.find(
       (membership) => membership.company.id === activeCompanyId
@@ -88,6 +185,10 @@ function toSafeUser(user: UserWithMemberships, activeCompanyId: string): SafeUse
   const activePermissions = activeMembership
     ? membershipPermissions(activeMembership)
     : []
+  const currentCompany =
+    safeCompanies.find((company) => company.id === activeCompanyId) ??
+    safeCompanies[0] ??
+    null
 
   return {
     id: user.id,
@@ -101,34 +202,39 @@ function toSafeUser(user: UserWithMemberships, activeCompanyId: string): SafeUse
     customRoleName: activeMembership?.customRole?.name ?? null,
     activeEventDateId: activeMembership?.activeEventDateId ?? null,
     permissions: activePermissions,
-    companyId: activeCompanyId,
-    companies: [...user.memberships]
-      .sort((a, b) => {
-        if (a.company.isTest !== b.company.isTest) return a.company.isTest ? 1 : -1
-        return a.company.name.localeCompare(b.company.name)
-      })
-      .map((membership) => ({
-        id: membership.company.id,
-        name: membership.company.name,
-        isTest: membership.company.isTest,
-        testSourceCompanyId: membership.company.testSourceCompanyId ?? null,
-        role: String(membership.role),
-        systemRole: String(membership.systemRole ?? 'ADMIN') as 'ADMIN' | 'CUSTOM',
-        customRoleId: membership.customRoleId ?? null,
-        customRoleName: membership.customRole?.name ?? null,
-        activeEventDateId: membership.activeEventDateId ?? null,
-        permissions: membershipPermissions(membership),
-      })),
+    companyId: currentCompany?.id ?? activeCompanyId,
+    currentCompany,
+    companies: safeCompanies,
   }
 }
 
+
+const userMembershipInclude = {
+  company: {
+    include: {
+      platformLicenses: {
+        include: { plan: true },
+        orderBy: { startsAt: 'desc' as const },
+      },
+      testSourceCompany: {
+        include: {
+          platformLicenses: {
+            include: { plan: true },
+            orderBy: { startsAt: 'desc' as const },
+          },
+        },
+      },
+    },
+  },
+  customRole: { include: { permissions: true } },
+}
 
 export async function loginUser(username: string, password: string) {
   const user = await prisma.user.findUnique({
     where: { username },
     include: {
       memberships: {
-        include: { company: true, customRole: { include: { permissions: true } } },
+        include: userMembershipInclude,
         orderBy: { createdAt: 'asc' },
       },
     },
@@ -149,6 +255,8 @@ export async function loginUser(username: string, password: string) {
   }
 
   const activeCompanyId =
+    user.memberships.find((membership) => !membership.company.isTest && canAccessMembershipCompany(membership))?.company.id ??
+    user.memberships.find((membership) => canAccessMembershipCompany(membership))?.company.id ??
     user.memberships.find((membership) => !membership.company.isTest)?.company.id ??
     user.memberships[0].company.id
   const safeUser = toSafeUser(user, activeCompanyId)
@@ -182,7 +290,7 @@ export async function getUserFromToken(token: string) {
     where: { id: decoded.sub },
     include: {
       memberships: {
-        include: { company: true, customRole: { include: { permissions: true } } },
+        include: userMembershipInclude,
         orderBy: { createdAt: 'asc' },
       },
     },
@@ -212,7 +320,7 @@ export async function switchUserCompany(userId: string, companyId: string) {
     where: { id: userId },
     include: {
       memberships: {
-        include: { company: true, customRole: { include: { permissions: true } } },
+        include: userMembershipInclude,
       },
     },
   })
@@ -231,6 +339,10 @@ export async function switchUserCompany(userId: string, companyId: string) {
 
   if (targetMembership.company.isTest && targetMembership.systemRole !== 'ADMIN') {
     throw new Error('ADMIN_ACCESS_REQUIRED')
+  }
+
+  if (!canAccessMembershipCompany(targetMembership)) {
+    throw new Error('COMPANY_LICENSE_INACTIVE')
   }
 
   const token = jwt.sign(
@@ -255,7 +367,7 @@ export async function switchUserCompany(userId: string, companyId: string) {
 export async function getCompaniesForUser(userId: string) {
   const memberships = await prisma.userCompany.findMany({
     where: { userId },
-    include: { company: true, customRole: { include: { permissions: true } } },
+    include: userMembershipInclude,
     orderBy: { createdAt: 'asc' },
   })
 
@@ -264,18 +376,9 @@ export async function getCompaniesForUser(userId: string) {
       if (a.company.isTest !== b.company.isTest) return a.company.isTest ? 1 : -1
       return a.company.name.localeCompare(b.company.name)
     })
-    .map((membership) => ({
-      id: membership.company.id,
-      name: membership.company.name,
-      isTest: membership.company.isTest,
-      testSourceCompanyId: membership.company.testSourceCompanyId ?? null,
-      role: String(membership.role),
-      systemRole: String(membership.systemRole ?? 'ADMIN') as 'ADMIN' | 'CUSTOM',
-      customRoleId: membership.customRoleId ?? null,
-      customRoleName: membership.customRole?.name ?? null,
-      permissions: membershipPermissions(membership as any),
-    }))
+    .map((membership) => membershipToSafeCompany(membership as any))
 }
+
 
 type UpdateMyAccountInput = {
   userId: string
@@ -292,7 +395,7 @@ export async function updateMyAccount(input: UpdateMyAccountInput) {
     where: { id: input.userId },
     include: {
       memberships: {
-        include: { company: true, customRole: { include: { permissions: true } } },
+        include: userMembershipInclude,
         orderBy: { createdAt: 'asc' },
       },
     },
@@ -396,7 +499,7 @@ export async function updateMyAccount(input: UpdateMyAccountInput) {
     data,
     include: {
       memberships: {
-        include: { company: true, customRole: { include: { permissions: true } } },
+        include: userMembershipInclude,
         orderBy: { createdAt: 'asc' },
       },
     },

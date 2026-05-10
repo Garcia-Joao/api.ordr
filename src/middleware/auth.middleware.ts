@@ -7,6 +7,14 @@ type AuthRequest = Request & {
     username: string
     role: string
     companyId: string
+    currentCompany?: {
+      licenseActive?: boolean
+      licenseStatus?: string
+      licensePlanName?: string | null
+      licenseEndsAt?: string | null
+      platformAccessStatus?: string
+      platformBlockedReason?: string | null
+    } | null
   }
 }
 
@@ -28,8 +36,23 @@ export async function requireAuth(
 
     req.user = user
 
+    const canPassInactiveLicense =
+      req.baseUrl === '/auth' &&
+      (req.path === '/me' || req.path === '/switch-company' || req.path === '/logout')
+
+    if (!user.currentCompany?.licenseActive && !canPassInactiveLicense) {
+      return res.status(403).json({
+        error: 'COMPANY_LICENSE_INACTIVE',
+        company: user.currentCompany ?? null,
+      })
+    }
+
     return next()
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.message === 'ADMIN_ACCESS_REQUIRED') {
+      return res.status(403).json({ error: 'ADMIN_ACCESS_REQUIRED' })
+    }
+
     return res.status(401).json({ error: 'Unauthorized' })
   }
 }

@@ -113,6 +113,14 @@ export async function switchCompany(req: AuthRequest, res: Response) {
       return res.status(403).json({ error: 'Access denied to this company' })
     }
 
+    if (error?.message === 'ADMIN_ACCESS_REQUIRED') {
+      return res.status(403).json({ error: 'Somente administradores podem acessar empresas de teste' })
+    }
+
+    if (error?.message === 'COMPANY_LICENSE_INACTIVE') {
+      return res.status(403).json({ error: 'A licença desta empresa não está ativa' })
+    }
+
     console.error(error)
     return res.status(500).json({ error: error?.message || 'Failed to switch company' })
   }
