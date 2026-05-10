@@ -47,7 +47,9 @@ export async function login(req: Request, res: Response) {
 
     return res.json({
       user: result.user,
+      token: result.token,
     })
+
   } catch (error: any) {
     if (error?.message === 'INVALID_CREDENTIALS') {
       return res.status(401).json({ error: 'Invalid credentials' })
@@ -107,6 +109,7 @@ export async function switchCompany(req: AuthRequest, res: Response) {
 
     return res.json({
       user: result.user,
+      token: result.token,
     })
   } catch (error: any) {
     if (error?.message === 'COMPANY_ACCESS_DENIED') {
