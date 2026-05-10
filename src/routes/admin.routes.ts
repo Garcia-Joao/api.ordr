@@ -4,14 +4,19 @@ import {
   adminCreateCompanyController,
   adminCreateLicensePlanController,
   adminCreateUserController,
+  adminDeleteCompanyMembershipController,
   adminGetCompanyController,
   adminListCompaniesController,
   adminListLicensePlansController,
+  adminListUsersController,
   adminLoginController,
   adminLogoutController,
   adminMeController,
   adminUpdateCompanyAccessController,
+  adminUpdateCompanyController,
+  adminUpdateCompanyMembershipController,
   adminUpdateLicensePlanController,
+  adminUpsertCompanyMembershipController,
 } from '../controllers/admin.controller'
 import { requirePlatformAdmin } from '../middleware/admin-auth.middleware'
 
@@ -21,6 +26,7 @@ adminRouter.post('/auth/login', adminLoginController)
 adminRouter.post('/auth/logout', adminLogoutController)
 adminRouter.get('/auth/me', requirePlatformAdmin, adminMeController)
 
+adminRouter.get('/users', requirePlatformAdmin, adminListUsersController)
 adminRouter.post('/users', requirePlatformAdmin, adminCreateUserController)
 
 adminRouter.get('/license-plans', requirePlatformAdmin, adminListLicensePlansController)
@@ -30,6 +36,7 @@ adminRouter.put('/license-plans/:id', requirePlatformAdmin, adminUpdateLicensePl
 adminRouter.get('/companies', requirePlatformAdmin, adminListCompaniesController)
 adminRouter.post('/companies', requirePlatformAdmin, adminCreateCompanyController)
 adminRouter.get('/companies/:companyId', requirePlatformAdmin, adminGetCompanyController)
+adminRouter.patch('/companies/:companyId', requirePlatformAdmin, adminUpdateCompanyController)
 adminRouter.patch(
   '/companies/:companyId/access',
   requirePlatformAdmin,
@@ -40,5 +47,9 @@ adminRouter.post(
   requirePlatformAdmin,
   adminAssignCompanyLicenseController
 )
+
+adminRouter.post('/company-memberships', requirePlatformAdmin, adminUpsertCompanyMembershipController)
+adminRouter.patch('/company-memberships/:membershipId', requirePlatformAdmin, adminUpdateCompanyMembershipController)
+adminRouter.delete('/company-memberships/:membershipId', requirePlatformAdmin, adminDeleteCompanyMembershipController)
 
 export default adminRouter

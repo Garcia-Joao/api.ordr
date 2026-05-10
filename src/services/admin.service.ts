@@ -45,6 +45,23 @@ type UpdateCompanyAccessInput = {
   platformBlockedReason?: string | null
 }
 
+type UpdateCompanyInput = {
+  name?: string
+  isTest?: boolean
+  platformAccessStatus?: 'ACTIVE' | 'SUSPENDED' | 'BLOCKED' | 'CANCELLED'
+  platformBlockedReason?: string | null
+}
+
+type CompanyMembershipInput = {
+  companyId: string
+  userId: string
+  systemRole: 'ADMIN' | 'CUSTOM'
+  customRoleId?: string | null
+  role?: 'admin' | 'cashier' | 'waiter'
+}
+
+type UpdateCompanyMembershipInput = Partial<Omit<CompanyMembershipInput, 'companyId' | 'userId'>>
+
 type AssignCompanyLicenseInput = {
   companyId: string
   planId: string
@@ -302,54 +319,173 @@ export async function updateLicensePlan(id: string, input: UpdateLicensePlanInpu
   }
 }
 
-export async function listCompanies() {
-  const companies = await prisma.company.findMany({
-    where: {
-      isTest: false,
-    },
-    include: {
-      memberships: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              username: true,
-              name: true,
-              phone: true,
-              createdAt: true,
-              role: true,
-            },
+
+function companyIncludeOptions() {
+  return {
+    memberships: {
+      include: {
+        user: {
+          select: {
+            id: true,
+            username: true,
+            name: true,
+            phone: true,
+            createdAt: true,
+            role: true,
           },
         },
-        orderBy: {
-          createdAt: 'asc',
+        customRole: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            active: true,
+          },
         },
       },
-      platformLicenses: {
-        include: {
-          plan: true,
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-        take: 1,
+      orderBy: {
+        createdAt: 'asc' as const,
       },
-      testCompanies: {
+    },
+    accessRoles: {
+      where: {
+        active: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        active: true,
+      },
+      orderBy: {
+        name: 'asc' as const,
+      },
+    },
+    platformLicenses: {
+      include: {
+        plan: true,
+      },
+      orderBy: {
+        createdAt: 'desc' as const,
+      },
+      take: 1,
+    },
+    testCompanies: {
+      select: {
+        id: true,
+        name: true,
+        createdAt: true,
+      },
+    },
+    _count: {
+      select: {
+        orders: true,
+        products: true,
+        customers: true,
+        memberships: true,
+        eventDates: true,
+      },
+    },
+  }
+}
+
+async function getCompanyForAdmin(companyId: string) {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    include: companyIncludeOptions(),
+  })
+
+  if (!company) {
+    throw new Error('COMPANY_NOT_FOUND')
+  }
+
+  return company
+}
+
+async function resolveMembershipRole(
+  companyId: string,
+  systemRole?: 'ADMIN' | 'CUSTOM',
+  customRoleId?: string | null
+) {
+  const resolvedSystemRole = systemRole ?? 'ADMIN'
+
+  if (resolvedSystemRole === 'ADMIN') {
+    return {
+      systemRole: 'ADMIN' as const,
+      customRoleId: null,
+      role: 'admin' as const,
+    }
+  }
+
+  if (!customRoleId) {
+    throw new Error('CUSTOM_ROLE_REQUIRED')
+  }
+
+  const role = await prisma.role.findFirst({
+    where: {
+      id: customRoleId,
+      companyId,
+      active: true,
+    },
+    select: {
+      id: true,
+    },
+  })
+
+  if (!role) {
+    throw new Error('ROLE_NOT_FOUND')
+  }
+
+  return {
+    systemRole: 'CUSTOM' as const,
+    customRoleId: role.id,
+    role: 'cashier' as const,
+  }
+}
+
+async function getMembershipForAdmin(membershipId: string) {
+  const membership = await prisma.userCompany.findUnique({
+    where: { id: membershipId },
+    include: {
+      company: {
         select: {
           id: true,
           name: true,
-          createdAt: true,
+          isTest: true,
+          platformAccessStatus: true,
         },
       },
-      _count: {
+      user: {
         select: {
-          orders: true,
-          products: true,
-          customers: true,
-          memberships: true,
+          id: true,
+          username: true,
+          name: true,
+          phone: true,
+          createdAt: true,
+          role: true,
+        },
+      },
+      customRole: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          active: true,
         },
       },
     },
+  })
+
+  if (!membership) {
+    throw new Error('MEMBERSHIP_NOT_FOUND')
+  }
+
+  return membership
+}
+
+export async function listCompanies() {
+  const companies = await prisma.company.findMany({
+    include: companyIncludeOptions(),
     orderBy: {
       createdAt: 'desc',
     },
@@ -362,71 +498,175 @@ export async function listCompanies() {
 }
 
 export async function getCompany(companyId: string) {
-  const company = await prisma.company.findFirst({
-    where: {
-      id: companyId,
-      isTest: false,
-    },
-    include: {
+  const company = await getCompanyForAdmin(companyId)
+
+  return {
+    ok: true,
+    company,
+  }
+}
+
+export async function listUsers() {
+  const users = await prisma.user.findMany({
+    select: {
+      id: true,
+      username: true,
+      name: true,
+      phone: true,
+      photoBase64: true,
+      createdAt: true,
+      role: true,
       memberships: {
         include: {
-          user: {
+          company: {
             select: {
               id: true,
-              username: true,
               name: true,
-              phone: true,
-              createdAt: true,
-              role: true,
+              isTest: true,
+              platformAccessStatus: true,
             },
           },
-          customRole: true,
+          customRole: {
+            select: {
+              id: true,
+              name: true,
+              description: true,
+              active: true,
+            },
+          },
         },
         orderBy: {
           createdAt: 'asc',
         },
       },
-      platformLicenses: {
-        include: {
-          plan: true,
-          createdByAdmin: {
-            select: {
-              id: true,
-              username: true,
-              name: true,
-            },
-          },
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-      },
-      testCompanies: {
-        select: {
-          id: true,
-          name: true,
-          createdAt: true,
-        },
-      },
       _count: {
         select: {
-          orders: true,
-          products: true,
-          customers: true,
           memberships: true,
-          eventDates: true,
         },
       },
     },
+    orderBy: {
+      createdAt: 'desc',
+    },
   })
 
-  if (!company) {
-    throw new Error('COMPANY_NOT_FOUND')
+  return {
+    ok: true,
+    users,
   }
+}
+
+export async function updateCompany(companyId: string, input: UpdateCompanyInput) {
+  const data: Prisma.CompanyUpdateInput = {}
+
+  if (input.name !== undefined) {
+    const name = input.name.trim()
+    if (!name) throw new Error('COMPANY_NAME_REQUIRED')
+    data.name = name
+  }
+
+  if (input.isTest !== undefined) {
+    data.isTest = input.isTest
+  }
+
+  if (input.platformAccessStatus !== undefined) {
+    const blocked =
+      input.platformAccessStatus === 'BLOCKED' ||
+      input.platformAccessStatus === 'SUSPENDED' ||
+      input.platformAccessStatus === 'CANCELLED'
+
+    data.platformAccessStatus = input.platformAccessStatus
+    data.platformBlockedAt = blocked ? new Date() : null
+    data.platformBlockedReason = blocked ? input.platformBlockedReason ?? null : null
+  } else if (input.platformBlockedReason !== undefined) {
+    data.platformBlockedReason = input.platformBlockedReason ?? null
+  }
+
+  await prisma.company.update({
+    where: { id: companyId },
+    data,
+  })
+
+  const company = await getCompanyForAdmin(companyId)
 
   return {
     ok: true,
     company,
+  }
+}
+
+export async function upsertCompanyMembership(input: CompanyMembershipInput) {
+  const company = await prisma.company.findUnique({ where: { id: input.companyId }, select: { id: true } })
+  if (!company) throw new Error('COMPANY_NOT_FOUND')
+
+  const user = await prisma.user.findUnique({ where: { id: input.userId }, select: { id: true } })
+  if (!user) throw new Error('USER_NOT_FOUND')
+
+  const resolved = await resolveMembershipRole(input.companyId, input.systemRole, input.customRoleId ?? null)
+
+  const membership = await prisma.userCompany.upsert({
+    where: {
+      userId_companyId: {
+        userId: input.userId,
+        companyId: input.companyId,
+      },
+    },
+    create: {
+      userId: input.userId,
+      companyId: input.companyId,
+      role: input.role ?? resolved.role,
+      systemRole: resolved.systemRole,
+      customRoleId: resolved.customRoleId,
+    },
+    update: {
+      role: input.role ?? resolved.role,
+      systemRole: resolved.systemRole,
+      customRoleId: resolved.customRoleId,
+    },
+  })
+
+  return {
+    ok: true,
+    membership: await getMembershipForAdmin(membership.id),
+  }
+}
+
+export async function updateCompanyMembership(membershipId: string, input: UpdateCompanyMembershipInput) {
+  const existing = await prisma.userCompany.findUnique({
+    where: { id: membershipId },
+    select: { id: true, companyId: true, systemRole: true, customRoleId: true },
+  })
+
+  if (!existing) throw new Error('MEMBERSHIP_NOT_FOUND')
+
+  const resolved = await resolveMembershipRole(
+    existing.companyId,
+    input.systemRole ?? existing.systemRole,
+    input.systemRole === 'ADMIN' ? null : input.customRoleId ?? existing.customRoleId
+  )
+
+  const membership = await prisma.userCompany.update({
+    where: { id: membershipId },
+    data: {
+      role: input.role ?? resolved.role,
+      systemRole: resolved.systemRole,
+      customRoleId: resolved.customRoleId,
+    },
+  })
+
+  return {
+    ok: true,
+    membership: await getMembershipForAdmin(membership.id),
+  }
+}
+
+export async function deleteCompanyMembership(membershipId: string) {
+  await prisma.userCompany.delete({
+    where: { id: membershipId },
+  })
+
+  return {
+    ok: true,
   }
 }
 

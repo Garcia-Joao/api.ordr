@@ -6,12 +6,17 @@ import {
   createCompanyWithInitialAccess,
   createLicensePlan,
   getAdminMe,
+  deleteCompanyMembership,
   getCompany,
   listCompanies,
   listLicensePlans,
+  listUsers,
   loginAdmin,
+  updateCompany,
   updateCompanyAccess,
+  updateCompanyMembership,
   updateLicensePlan,
+  upsertCompanyMembership,
 } from '../services/admin.service'
 import type { AdminAuthRequest } from '../middleware/admin-auth.middleware'
 
@@ -170,6 +175,24 @@ export async function adminListCompaniesController(
   }
 }
 
+
+export async function adminListUsersController(
+  _req: AdminAuthRequest,
+  res: Response
+) {
+  try {
+    const result = await listUsers()
+
+    return res.json(result)
+  } catch (error: any) {
+    console.error('[admin] list users error:', error)
+
+    return res.status(500).json({
+      error: error?.message || 'ADMIN_LIST_USERS_ERROR',
+    })
+  }
+}
+
 export async function adminGetCompanyController(
   req: AdminAuthRequest,
   res: Response
@@ -204,6 +227,78 @@ export async function adminCreateCompanyController(
 
     return res.status(400).json({
       error: error?.message || 'ADMIN_CREATE_COMPANY_ERROR',
+    })
+  }
+}
+
+
+export async function adminUpdateCompanyController(
+  req: AdminAuthRequest,
+  res: Response
+) {
+  try {
+    const companyId = getParam(req.params.companyId, 'companyId')
+    const result = await updateCompany(companyId, req.body)
+
+    return res.json(result)
+  } catch (error: any) {
+    console.error('[admin] update company error:', error)
+
+    return res.status(400).json({
+      error: error?.message || 'ADMIN_UPDATE_COMPANY_ERROR',
+    })
+  }
+}
+
+export async function adminUpsertCompanyMembershipController(
+  req: AdminAuthRequest,
+  res: Response
+) {
+  try {
+    const result = await upsertCompanyMembership(req.body)
+
+    return res.status(201).json(result)
+  } catch (error: any) {
+    console.error('[admin] upsert company membership error:', error)
+
+    return res.status(400).json({
+      error: error?.message || 'ADMIN_UPSERT_COMPANY_MEMBERSHIP_ERROR',
+    })
+  }
+}
+
+export async function adminUpdateCompanyMembershipController(
+  req: AdminAuthRequest,
+  res: Response
+) {
+  try {
+    const membershipId = getParam(req.params.membershipId, 'membershipId')
+    const result = await updateCompanyMembership(membershipId, req.body)
+
+    return res.json(result)
+  } catch (error: any) {
+    console.error('[admin] update company membership error:', error)
+
+    return res.status(400).json({
+      error: error?.message || 'ADMIN_UPDATE_COMPANY_MEMBERSHIP_ERROR',
+    })
+  }
+}
+
+export async function adminDeleteCompanyMembershipController(
+  req: AdminAuthRequest,
+  res: Response
+) {
+  try {
+    const membershipId = getParam(req.params.membershipId, 'membershipId')
+    const result = await deleteCompanyMembership(membershipId)
+
+    return res.json(result)
+  } catch (error: any) {
+    console.error('[admin] delete company membership error:', error)
+
+    return res.status(400).json({
+      error: error?.message || 'ADMIN_DELETE_COMPANY_MEMBERSHIP_ERROR',
     })
   }
 }

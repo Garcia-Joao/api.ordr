@@ -13,8 +13,12 @@ console.log('[index] DATABASE_URL exists:', Boolean(process.env.DATABASE_URL))
 const serverPath = path.join(__dirname, 'dist', 'server.js')
 
 try {
-  if (!fs.existsSync(serverPath)) {
-    console.log('[index] dist/server.js not found. Running npm run build...')
+  const srcAdminPath = path.join(__dirname, 'src', 'services', 'admin.service.ts')
+  const distMissing = !fs.existsSync(serverPath)
+  const srcChanged = fs.existsSync(srcAdminPath) && (!fs.existsSync(serverPath) || fs.statSync(srcAdminPath).mtimeMs > fs.statSync(serverPath).mtimeMs)
+
+  if (distMissing || srcChanged) {
+    console.log('[index] Build output is missing or older than source. Running npm run build...')
 
     execSync('npm run build', {
       cwd: __dirname,
