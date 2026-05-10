@@ -570,6 +570,19 @@ async function createOrder(data, userId) {
         }
     }
     await assertInternalCustomerCanReceiveOrder(data.internalCustomerId);
+    let resolvedDeviceId = data.deviceId?.trim() || null;
+    if (resolvedDeviceId) {
+        const device = await prisma_1.prisma.device.findFirst({
+            where: {
+                id: resolvedDeviceId,
+                companyId: data.companyId,
+            },
+            select: { id: true },
+        });
+        if (!device) {
+            resolvedDeviceId = null;
+        }
+    }
     const order = await prisma_1.prisma.$transaction(async (tx) => {
         const createdOrder = await tx.order.create({
             data: {
@@ -587,6 +600,7 @@ async function createOrder(data, userId) {
                 total: new client_1.Prisma.Decimal(data.total),
                 paymentMethod: data.paymentMethod ?? null,
                 taxApplied: data.taxApplied,
+                deviceId: resolvedDeviceId,
                 createdByUserId: userId,
                 items: {
                     create: data.orderItems.map((item) => ({

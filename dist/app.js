@@ -24,6 +24,7 @@ const reports_routes_1 = __importDefault(require("./routes/reports.routes"));
 const product_cost_history_routes_1 = __importDefault(require("./routes/product-cost-history.routes"));
 const access_routes_1 = __importDefault(require("./routes/access.routes"));
 const audit_routes_1 = __importDefault(require("./routes/audit.routes"));
+const devices_routes_1 = __importDefault(require("./routes/devices.routes"));
 const admin_routes_1 = __importDefault(require("./routes/admin.routes"));
 const prisma_1 = require("./lib/prisma");
 const app = (0, express_1.default)();
@@ -55,7 +56,7 @@ app.use((0, cors_1.default)({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-company-id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-company-id', 'x-device-id'],
 }));
 app.use((0, cookie_parser_1.default)());
 app.use(express_1.default.json({ limit: '10mb' }));
@@ -101,4 +102,5 @@ app.use('/reports', reports_routes_1.default);
 app.use('/product-cost-history', product_cost_history_routes_1.default);
 app.use('/access', access_routes_1.default);
 app.use('/audit', audit_routes_1.default);
+app.use('/devices', devices_routes_1.default);
 exports.default = app;

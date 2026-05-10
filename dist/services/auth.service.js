@@ -13,6 +13,75 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prisma_1 = require("../lib/prisma");
 const permissions_1 = require("../auth/permissions");
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-this';
+function getDaysRemaining(endsAt) {
+    if (!endsAt)
+        return null;
+    const end = new Date(endsAt).getTime();
+    if (Number.isNaN(end))
+        return null;
+    const diff = end - Date.now();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+}
+function resolveCompanyLicenseInfo(company) {
+    const sourceCompany = company?.isTest && company?.testSourceCompany
+        ? company.testSourceCompany
+        : company;
+    const now = new Date();
+    const licenses = Array.isArray(sourceCompany?.platformLicenses)
+        ? sourceCompany.platformLicenses
+        : [];
+    const activeLicense = licenses.find((license) => {
+        const startsAt = license.startsAt ? new Date(license.startsAt) : null;
+        const endsAt = license.endsAt ? new Date(license.endsAt) : null;
+        return (String(license.status) === 'ACTIVE' &&
+            (!startsAt || startsAt <= now) &&
+            (!endsAt || endsAt > now));
+    });
+    const displayLicense = activeLicense ?? licenses[0] ?? null;
+    const platformAccessStatus = String(sourceCompany?.platformAccessStatus ?? 'ACTIVE');
+    const licenseActive = platformAccessStatus === 'ACTIVE' && Boolean(activeLicense);
+    return {
+        licenseActive,
+        licenseStatus: licenseActive
+            ? 'ACTIVE'
+            : platformAccessStatus !== 'ACTIVE'
+                ? platformAccessStatus
+                : displayLicense?.status
+                    ? String(displayLicense.status)
+                    : 'INACTIVE',
+        licensePlanName: displayLicense?.plan?.name ?? null,
+        licenseStartsAt: displayLicense?.startsAt
+            ? new Date(displayLicense.startsAt).toISOString()
+            : null,
+        licenseEndsAt: displayLicense?.endsAt
+            ? new Date(displayLicense.endsAt).toISOString()
+            : null,
+        licenseDaysRemaining: getDaysRemaining(displayLicense?.endsAt ?? null),
+        platformAccessStatus,
+        platformBlockedReason: sourceCompany?.platformBlockedReason ?? null,
+        licenseSourceCompanyId: sourceCompany?.id ?? null,
+        licenseSourceCompanyName: sourceCompany?.name ?? null,
+    };
+}
+function membershipToSafeCompany(membership) {
+    const systemRole = String(membership.systemRole ?? 'ADMIN');
+    return {
+        id: membership.company.id,
+        name: membership.company.name,
+        isTest: membership.company.isTest,
+        testSourceCompanyId: membership.company.testSourceCompanyId ?? null,
+        role: String(membership.role),
+        systemRole,
+        customRoleId: membership.customRoleId ?? null,
+        customRoleName: membership.customRole?.name ?? null,
+        activeEventDateId: membership.activeEventDateId ?? null,
+        permissions: membershipPermissions(membership),
+        ...resolveCompanyLicenseInfo(membership.company),
+    };
+}
+function canAccessMembershipCompany(membership) {
+    return resolveCompanyLicenseInfo(membership.company).licenseActive;
+}
 function membershipPermissions(membership) {
     const systemRole = String(membership.systemRole ?? 'ADMIN');
     if (systemRole === 'ADMIN')
@@ -22,11 +91,20 @@ function membershipPermissions(membership) {
     return membership.customRole.permissions.map((permission) => permission.permissionKey);
 }
 function toSafeUser(user, activeCompanyId) {
+    const sortedMemberships = [...user.memberships].sort((a, b) => {
+        if (a.company.isTest !== b.company.isTest)
+            return a.company.isTest ? 1 : -1;
+        return a.company.name.localeCompare(b.company.name);
+    });
+    const safeCompanies = sortedMemberships.map(membershipToSafeCompany);
     const activeMembership = user.memberships.find((membership) => membership.company.id === activeCompanyId) ?? user.memberships[0];
     const activeSystemRole = String(activeMembership?.systemRole ?? 'ADMIN');
     const activePermissions = activeMembership
         ? membershipPermissions(activeMembership)
         : [];
+    const currentCompany = safeCompanies.find((company) => company.id === activeCompanyId) ??
+        safeCompanies[0] ??
+        null;
     return {
         id: user.id,
         username: user.username,
@@ -39,26 +117,36 @@ function toSafeUser(user, activeCompanyId) {
         customRoleName: activeMembership?.customRole?.name ?? null,
         activeEventDateId: activeMembership?.activeEventDateId ?? null,
         permissions: activePermissions,
-        companyId: activeCompanyId,
-        companies: user.memberships.map((membership) => ({
-            id: membership.company.id,
-            name: membership.company.name,
-            isTest: membership.company.isTest,
-            role: String(membership.role),
-            systemRole: String(membership.systemRole ?? 'ADMIN'),
-            customRoleId: membership.customRoleId ?? null,
-            customRoleName: membership.customRole?.name ?? null,
-            activeEventDateId: membership.activeEventDateId ?? null,
-            permissions: membershipPermissions(membership),
-        })),
+        companyId: currentCompany?.id ?? activeCompanyId,
+        currentCompany,
+        companies: safeCompanies,
     };
 }
+const userMembershipInclude = {
+    company: {
+        include: {
+            platformLicenses: {
+                include: { plan: true },
+                orderBy: { startsAt: 'desc' },
+            },
+            testSourceCompany: {
+                include: {
+                    platformLicenses: {
+                        include: { plan: true },
+                        orderBy: { startsAt: 'desc' },
+                    },
+                },
+            },
+        },
+    },
+    customRole: { include: { permissions: true } },
+};
 async function loginUser(username, password) {
     const user = await prisma_1.prisma.user.findUnique({
         where: { username },
         include: {
             memberships: {
-                include: { company: true, customRole: { include: { permissions: true } } },
+                include: userMembershipInclude,
                 orderBy: { createdAt: 'asc' },
             },
         },
@@ -73,7 +161,10 @@ async function loginUser(username, password) {
     if (user.memberships.length === 0) {
         throw new Error('USER_WITHOUT_COMPANY');
     }
-    const activeCompanyId = user.memberships[0].company.id;
+    const activeCompanyId = user.memberships.find((membership) => !membership.company.isTest && canAccessMembershipCompany(membership))?.company.id ??
+        user.memberships.find((membership) => canAccessMembershipCompany(membership))?.company.id ??
+        user.memberships.find((membership) => !membership.company.isTest)?.company.id ??
+        user.memberships[0].company.id;
     const safeUser = toSafeUser(user, activeCompanyId);
     const token = jsonwebtoken_1.default.sign({
         sub: user.id,
@@ -92,7 +183,7 @@ async function getUserFromToken(token) {
         where: { id: decoded.sub },
         include: {
             memberships: {
-                include: { company: true, customRole: { include: { permissions: true } } },
+                include: userMembershipInclude,
                 orderBy: { createdAt: 'asc' },
             },
         },
@@ -100,9 +191,12 @@ async function getUserFromToken(token) {
     if (!user) {
         throw new Error('USER_NOT_FOUND');
     }
-    const hasAccessToCompany = user.memberships.some((membership) => membership.company.id === decoded.companyId);
-    if (!hasAccessToCompany) {
+    const activeMembership = user.memberships.find((membership) => membership.company.id === decoded.companyId);
+    if (!activeMembership) {
         throw new Error('COMPANY_ACCESS_DENIED');
+    }
+    if (activeMembership.company.isTest && activeMembership.systemRole !== 'ADMIN') {
+        throw new Error('ADMIN_ACCESS_REQUIRED');
     }
     return toSafeUser(user, decoded.companyId);
 }
@@ -111,16 +205,22 @@ async function switchUserCompany(userId, companyId) {
         where: { id: userId },
         include: {
             memberships: {
-                include: { company: true, customRole: { include: { permissions: true } } },
+                include: userMembershipInclude,
             },
         },
     });
     if (!user) {
         throw new Error('USER_NOT_FOUND');
     }
-    const hasAccessToCompany = user.memberships.some((membership) => membership.company.id === companyId);
-    if (!hasAccessToCompany) {
+    const targetMembership = user.memberships.find((membership) => membership.company.id === companyId);
+    if (!targetMembership) {
         throw new Error('COMPANY_ACCESS_DENIED');
+    }
+    if (targetMembership.company.isTest && targetMembership.systemRole !== 'ADMIN') {
+        throw new Error('ADMIN_ACCESS_REQUIRED');
+    }
+    if (!canAccessMembershipCompany(targetMembership)) {
+        throw new Error('COMPANY_LICENSE_INACTIVE');
     }
     const token = jsonwebtoken_1.default.sign({
         sub: user.id,
@@ -137,26 +237,23 @@ async function switchUserCompany(userId, companyId) {
 async function getCompaniesForUser(userId) {
     const memberships = await prisma_1.prisma.userCompany.findMany({
         where: { userId },
-        include: { company: true, customRole: { include: { permissions: true } } },
+        include: userMembershipInclude,
         orderBy: { createdAt: 'asc' },
     });
-    return memberships.map((membership) => ({
-        id: membership.company.id,
-        name: membership.company.name,
-        isTest: membership.company.isTest,
-        role: String(membership.role),
-        systemRole: String(membership.systemRole ?? 'ADMIN'),
-        customRoleId: membership.customRoleId ?? null,
-        customRoleName: membership.customRole?.name ?? null,
-        permissions: membershipPermissions(membership),
-    }));
+    return memberships
+        .sort((a, b) => {
+        if (a.company.isTest !== b.company.isTest)
+            return a.company.isTest ? 1 : -1;
+        return a.company.name.localeCompare(b.company.name);
+    })
+        .map((membership) => membershipToSafeCompany(membership));
 }
 async function updateMyAccount(input) {
     const user = await prisma_1.prisma.user.findUnique({
         where: { id: input.userId },
         include: {
             memberships: {
-                include: { company: true, customRole: { include: { permissions: true } } },
+                include: userMembershipInclude,
                 orderBy: { createdAt: 'asc' },
             },
         },
@@ -225,7 +322,7 @@ async function updateMyAccount(input) {
         data,
         include: {
             memberships: {
-                include: { company: true, customRole: { include: { permissions: true } } },
+                include: userMembershipInclude,
                 orderBy: { createdAt: 'asc' },
             },
         },

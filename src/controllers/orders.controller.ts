@@ -1,6 +1,11 @@
 import { Request, Response } from 'express'
 import * as orderService from '../services/orders.service'
 
+function getHeaderString(value: string | string[] | undefined) {
+  if (Array.isArray(value)) return value[0]
+  return value
+}
+
 type AuthRequest = Request & {
   user?: {
     id: string
@@ -43,6 +48,7 @@ export async function createOrder(req: AuthRequest, res: Response) {
       {
         companyId,
         ...req.body,
+        deviceId: getHeaderString(req.headers['x-device-id']) ?? req.body?.deviceId ?? null,
       },
       userId
     )

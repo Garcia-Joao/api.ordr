@@ -38,6 +38,7 @@ type CreateOrderInput = {
   total: Prisma.Decimal | number | string
   paymentMethod?: PaymentMethod | null
   taxApplied: boolean
+  deviceId?: string | null
   orderItems: CreateOrderItemInput[]
 }
 
@@ -791,9 +792,25 @@ export async function createOrder(data: CreateOrderInput, userId: string) {
     }
   }
 
-  await assertInternalCustomerCanReceiveOrder(data.internalCustomerId)
+await assertInternalCustomerCanReceiveOrder(data.internalCustomerId)
 
-  const order = await prisma.$transaction(async (tx: any) => {
+let resolvedDeviceId = data.deviceId?.trim() || null
+
+if (resolvedDeviceId) {
+  const device = await prisma.device.findFirst({
+    where: {
+      id: resolvedDeviceId,
+      companyId: data.companyId,
+    },
+    select: { id: true },
+  })
+
+  if (!device) {
+    resolvedDeviceId = null
+  }
+}
+
+const order = await prisma.$transaction(async (tx: any) => {
     const createdOrder = await tx.order.create({
       data: {
         id: data.id,
@@ -810,6 +827,7 @@ export async function createOrder(data: CreateOrderInput, userId: string) {
         total: new Prisma.Decimal(data.total),
         paymentMethod: data.paymentMethod ?? null,
         taxApplied: data.taxApplied,
+        deviceId: resolvedDeviceId,
         createdByUserId: userId,
 
         items: {

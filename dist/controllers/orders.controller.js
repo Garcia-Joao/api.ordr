@@ -43,6 +43,11 @@ exports.getOrdersReportSummary = getOrdersReportSummary;
 exports.paySelectedInternalCustomerOrders = paySelectedInternalCustomerOrders;
 exports.getInternalCustomerPendingOrders = getInternalCustomerPendingOrders;
 const orderService = __importStar(require("../services/orders.service"));
+function getHeaderString(value) {
+    if (Array.isArray(value))
+        return value[0];
+    return value;
+}
 async function getOrders(req, res) {
     try {
         const companyId = req.user?.companyId;
@@ -70,6 +75,7 @@ async function createOrder(req, res) {
         const order = await orderService.createOrder({
             companyId,
             ...req.body,
+            deviceId: getHeaderString(req.headers['x-device-id']) ?? req.body?.deviceId ?? null,
         }, userId);
         return res.status(201).json(order);
     }

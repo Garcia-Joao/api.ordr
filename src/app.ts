@@ -20,6 +20,7 @@ import reportsRoutes from './routes/reports.routes'
 import router from './routes/product-cost-history.routes'
 import accessRoutes from './routes/access.routes'
 import auditRoutes from './routes/audit.routes'
+import devicesRoutes from './routes/devices.routes'
 import adminRouter from './routes/admin.routes'
 
 import { prisma } from './lib/prisma'
@@ -58,7 +59,7 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-company-id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-company-id', 'x-device-id'],
   })
 )
 
@@ -111,5 +112,6 @@ app.use('/reports', reportsRoutes)
 app.use('/product-cost-history', router)
 app.use('/access', accessRoutes)
 app.use('/audit', auditRoutes)
+app.use('/devices', devicesRoutes)
 
 export default app

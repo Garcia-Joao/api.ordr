@@ -6,15 +6,22 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ADMIN_COOKIE_NAME = void 0;
 exports.ensureInitialPlatformAdmin = ensureInitialPlatformAdmin;
 exports.createAdminUser = createAdminUser;
+exports.createUser = createUser;
 exports.loginAdmin = loginAdmin;
 exports.listLicensePlans = listLicensePlans;
 exports.createLicensePlan = createLicensePlan;
 exports.updateLicensePlan = updateLicensePlan;
 exports.listCompanies = listCompanies;
 exports.getCompany = getCompany;
+exports.listUsers = listUsers;
+exports.updateCompany = updateCompany;
+exports.upsertCompanyMembership = upsertCompanyMembership;
+exports.updateCompanyMembership = updateCompanyMembership;
+exports.deleteCompanyMembership = deleteCompanyMembership;
 exports.createCompanyWithInitialAccess = createCompanyWithInitialAccess;
 exports.updateCompanyAccess = updateCompanyAccess;
 exports.assignCompanyLicense = assignCompanyLicense;
+exports.updateCompanyLicense = updateCompanyLicense;
 exports.getAdminMe = getAdminMe;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
@@ -42,8 +49,28 @@ function addMonths(date, months) {
     result.setMonth(result.getMonth() + months);
     return result;
 }
-function buildLicenseDates(plan) {
-    const startsAt = new Date();
+function parseDateInput(value, fallback) {
+    if (!value)
+        return fallback;
+    const parsed = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        throw new Error('INVALID_LICENSE_DATE');
+    }
+    return parsed;
+}
+function parseOptionalDateInput(value) {
+    if (value === undefined)
+        return undefined;
+    if (value === null || value === '')
+        return null;
+    const parsed = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        throw new Error('INVALID_LICENSE_DATE');
+    }
+    return parsed;
+}
+function buildLicenseDates(plan, startsAtInput) {
+    const startsAt = parseDateInput(startsAtInput, new Date());
     if (plan.isLifetime) {
         return {
             startsAt,
@@ -115,6 +142,102 @@ async function createAdminUser(input) {
     return {
         ok: true,
         admin,
+    };
+}
+async function createUser(input) {
+    const username = input.username.trim();
+    if (!username) {
+        throw new Error('USERNAME_REQUIRED');
+    }
+    if (!input.password || input.password.length < 6) {
+        throw new Error('PASSWORD_MIN_LENGTH');
+    }
+    const existingUser = await prisma_1.prisma.user.findUnique({
+        where: { username },
+        select: { id: true },
+    });
+    if (existingUser) {
+        throw new Error('USERNAME_ALREADY_EXISTS');
+    }
+    const company = input.companyId
+        ? await prisma_1.prisma.company.findUnique({
+            where: { id: input.companyId },
+            select: { id: true },
+        })
+        : null;
+    if (input.companyId && !company) {
+        throw new Error('COMPANY_NOT_FOUND');
+    }
+    const resolved = input.companyId
+        ? await resolveMembershipRole(input.companyId, input.systemRole ?? 'ADMIN', input.customRoleId ?? null)
+        : null;
+    const password = await bcryptjs_1.default.hash(input.password, 10);
+    const createdUser = await prisma_1.prisma.$transaction(async (tx) => {
+        const user = await tx.user.create({
+            data: {
+                username,
+                password,
+                name: input.name ?? null,
+                phone: input.phone ?? null,
+                role: input.role ?? resolved?.role ?? 'cashier',
+            },
+        });
+        if (input.companyId && resolved) {
+            await tx.userCompany.create({
+                data: {
+                    userId: user.id,
+                    companyId: input.companyId,
+                    role: input.role ?? resolved.role,
+                    systemRole: resolved.systemRole,
+                    customRoleId: resolved.customRoleId,
+                },
+            });
+        }
+        return user;
+    });
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { id: createdUser.id },
+        select: {
+            id: true,
+            username: true,
+            name: true,
+            phone: true,
+            photoBase64: true,
+            createdAt: true,
+            role: true,
+            memberships: {
+                include: {
+                    company: {
+                        select: {
+                            id: true,
+                            name: true,
+                            isTest: true,
+                            platformAccessStatus: true,
+                        },
+                    },
+                    customRole: {
+                        select: {
+                            id: true,
+                            name: true,
+                            description: true,
+                            active: true,
+                        },
+                    },
+                },
+                orderBy: {
+                    createdAt: 'asc',
+                },
+            },
+            _count: {
+                select: {
+                    memberships: true,
+                },
+            },
+        },
+    });
+    return {
+        ok: true,
+        user,
     };
 }
 async function loginAdmin(input) {
@@ -218,54 +341,155 @@ async function updateLicensePlan(id, input) {
         plan,
     };
 }
-async function listCompanies() {
-    const companies = await prisma_1.prisma.company.findMany({
-        where: {
-            isTest: false,
-        },
-        include: {
-            memberships: {
-                include: {
-                    user: {
-                        select: {
-                            id: true,
-                            username: true,
-                            name: true,
-                            phone: true,
-                            createdAt: true,
-                            role: true,
-                        },
+function companyIncludeOptions() {
+    return {
+        memberships: {
+            include: {
+                user: {
+                    select: {
+                        id: true,
+                        username: true,
+                        name: true,
+                        phone: true,
+                        createdAt: true,
+                        role: true,
                     },
                 },
-                orderBy: {
-                    createdAt: 'asc',
+                customRole: {
+                    select: {
+                        id: true,
+                        name: true,
+                        description: true,
+                        active: true,
+                    },
                 },
             },
-            platformLicenses: {
-                include: {
-                    plan: true,
-                },
-                orderBy: {
-                    createdAt: 'desc',
-                },
-                take: 1,
+            orderBy: {
+                createdAt: 'asc',
             },
-            testCompanies: {
+        },
+        accessRoles: {
+            where: {
+                active: true,
+            },
+            select: {
+                id: true,
+                name: true,
+                description: true,
+                active: true,
+            },
+            orderBy: {
+                name: 'asc',
+            },
+        },
+        platformLicenses: {
+            include: {
+                plan: true,
+            },
+            orderBy: {
+                createdAt: 'desc',
+            },
+            take: 1,
+        },
+        testCompanies: {
+            select: {
+                id: true,
+                name: true,
+                createdAt: true,
+            },
+        },
+        _count: {
+            select: {
+                orders: true,
+                products: true,
+                customers: true,
+                memberships: true,
+                eventDates: true,
+            },
+        },
+    };
+}
+async function getCompanyForAdmin(companyId) {
+    const company = await prisma_1.prisma.company.findUnique({
+        where: { id: companyId },
+        include: companyIncludeOptions(),
+    });
+    if (!company) {
+        throw new Error('COMPANY_NOT_FOUND');
+    }
+    return company;
+}
+async function resolveMembershipRole(companyId, systemRole, customRoleId) {
+    const resolvedSystemRole = systemRole ?? 'ADMIN';
+    if (resolvedSystemRole === 'ADMIN') {
+        return {
+            systemRole: 'ADMIN',
+            customRoleId: null,
+            role: 'admin',
+        };
+    }
+    if (!customRoleId) {
+        throw new Error('CUSTOM_ROLE_REQUIRED');
+    }
+    const role = await prisma_1.prisma.role.findFirst({
+        where: {
+            id: customRoleId,
+            companyId,
+            active: true,
+        },
+        select: {
+            id: true,
+        },
+    });
+    if (!role) {
+        throw new Error('ROLE_NOT_FOUND');
+    }
+    return {
+        systemRole: 'CUSTOM',
+        customRoleId: role.id,
+        role: 'cashier',
+    };
+}
+async function getMembershipForAdmin(membershipId) {
+    const membership = await prisma_1.prisma.userCompany.findUnique({
+        where: { id: membershipId },
+        include: {
+            company: {
                 select: {
                     id: true,
                     name: true,
-                    createdAt: true,
+                    isTest: true,
+                    platformAccessStatus: true,
                 },
             },
-            _count: {
+            user: {
                 select: {
-                    orders: true,
-                    products: true,
-                    customers: true,
-                    memberships: true,
+                    id: true,
+                    username: true,
+                    name: true,
+                    phone: true,
+                    createdAt: true,
+                    role: true,
+                },
+            },
+            customRole: {
+                select: {
+                    id: true,
+                    name: true,
+                    description: true,
+                    active: true,
                 },
             },
         },
+    });
+    if (!membership) {
+        throw new Error('MEMBERSHIP_NOT_FOUND');
+    }
+    return membership;
+}
+async function listCompanies() {
+    const companies = await prisma_1.prisma.company.findMany({
+        include: companyIncludeOptions(),
         orderBy: {
             createdAt: 'desc',
         },
@@ -276,69 +500,152 @@ async function listCompanies() {
     };
 }
 async function getCompany(companyId) {
-    const company = await prisma_1.prisma.company.findFirst({
-        where: {
-            id: companyId,
-            isTest: false,
-        },
-        include: {
+    const company = await getCompanyForAdmin(companyId);
+    return {
+        ok: true,
+        company,
+    };
+}
+async function listUsers() {
+    const users = await prisma_1.prisma.user.findMany({
+        select: {
+            id: true,
+            username: true,
+            name: true,
+            phone: true,
+            photoBase64: true,
+            createdAt: true,
+            role: true,
             memberships: {
                 include: {
-                    user: {
+                    company: {
                         select: {
                             id: true,
-                            username: true,
                             name: true,
-                            phone: true,
-                            createdAt: true,
-                            role: true,
+                            isTest: true,
+                            platformAccessStatus: true,
                         },
                     },
-                    customRole: true,
+                    customRole: {
+                        select: {
+                            id: true,
+                            name: true,
+                            description: true,
+                            active: true,
+                        },
+                    },
                 },
                 orderBy: {
                     createdAt: 'asc',
                 },
             },
-            platformLicenses: {
-                include: {
-                    plan: true,
-                    createdByAdmin: {
-                        select: {
-                            id: true,
-                            username: true,
-                            name: true,
-                        },
-                    },
-                },
-                orderBy: {
-                    createdAt: 'desc',
-                },
-            },
-            testCompanies: {
-                select: {
-                    id: true,
-                    name: true,
-                    createdAt: true,
-                },
-            },
             _count: {
                 select: {
-                    orders: true,
-                    products: true,
-                    customers: true,
                     memberships: true,
-                    eventDates: true,
                 },
             },
         },
+        orderBy: {
+            createdAt: 'desc',
+        },
     });
-    if (!company) {
-        throw new Error('COMPANY_NOT_FOUND');
+    return {
+        ok: true,
+        users,
+    };
+}
+async function updateCompany(companyId, input) {
+    const data = {};
+    if (input.name !== undefined) {
+        const name = input.name.trim();
+        if (!name)
+            throw new Error('COMPANY_NAME_REQUIRED');
+        data.name = name;
     }
+    if (input.isTest !== undefined) {
+        data.isTest = input.isTest;
+    }
+    if (input.platformAccessStatus !== undefined) {
+        const blocked = input.platformAccessStatus === 'BLOCKED' ||
+            input.platformAccessStatus === 'SUSPENDED' ||
+            input.platformAccessStatus === 'CANCELLED';
+        data.platformAccessStatus = input.platformAccessStatus;
+        data.platformBlockedAt = blocked ? new Date() : null;
+        data.platformBlockedReason = blocked ? input.platformBlockedReason ?? null : null;
+    }
+    else if (input.platformBlockedReason !== undefined) {
+        data.platformBlockedReason = input.platformBlockedReason ?? null;
+    }
+    await prisma_1.prisma.company.update({
+        where: { id: companyId },
+        data,
+    });
+    const company = await getCompanyForAdmin(companyId);
     return {
         ok: true,
         company,
+    };
+}
+async function upsertCompanyMembership(input) {
+    const company = await prisma_1.prisma.company.findUnique({ where: { id: input.companyId }, select: { id: true } });
+    if (!company)
+        throw new Error('COMPANY_NOT_FOUND');
+    const user = await prisma_1.prisma.user.findUnique({ where: { id: input.userId }, select: { id: true } });
+    if (!user)
+        throw new Error('USER_NOT_FOUND');
+    const resolved = await resolveMembershipRole(input.companyId, input.systemRole, input.customRoleId ?? null);
+    const membership = await prisma_1.prisma.userCompany.upsert({
+        where: {
+            userId_companyId: {
+                userId: input.userId,
+                companyId: input.companyId,
+            },
+        },
+        create: {
+            userId: input.userId,
+            companyId: input.companyId,
+            role: input.role ?? resolved.role,
+            systemRole: resolved.systemRole,
+            customRoleId: resolved.customRoleId,
+        },
+        update: {
+            role: input.role ?? resolved.role,
+            systemRole: resolved.systemRole,
+            customRoleId: resolved.customRoleId,
+        },
+    });
+    return {
+        ok: true,
+        membership: await getMembershipForAdmin(membership.id),
+    };
+}
+async function updateCompanyMembership(membershipId, input) {
+    const existing = await prisma_1.prisma.userCompany.findUnique({
+        where: { id: membershipId },
+        select: { id: true, companyId: true, systemRole: true, customRoleId: true },
+    });
+    if (!existing)
+        throw new Error('MEMBERSHIP_NOT_FOUND');
+    const resolved = await resolveMembershipRole(existing.companyId, input.systemRole ?? existing.systemRole, input.systemRole === 'ADMIN' ? null : input.customRoleId ?? existing.customRoleId);
+    const membership = await prisma_1.prisma.userCompany.update({
+        where: { id: membershipId },
+        data: {
+            role: input.role ?? resolved.role,
+            systemRole: resolved.systemRole,
+            customRoleId: resolved.customRoleId,
+        },
+    });
+    return {
+        ok: true,
+        membership: await getMembershipForAdmin(membership.id),
+    };
+}
+async function deleteCompanyMembership(membershipId) {
+    await prisma_1.prisma.userCompany.delete({
+        where: { id: membershipId },
+    });
+    return {
+        ok: true,
     };
 }
 async function createCompanyWithInitialAccess(input) {
@@ -416,7 +723,7 @@ async function createCompanyWithInitialAccess(input) {
                     status: 'REPLACED',
                 },
             });
-            const { startsAt, endsAt } = buildLicenseDates(plan);
+            const { startsAt, endsAt } = buildLicenseDates(plan, input.licenseStartsAt);
             license = await tx.companyLicense.create({
                 data: {
                     companyId: company.id,
@@ -484,7 +791,7 @@ async function assignCompanyLicense(input) {
     if (!plan.active) {
         throw new Error('LICENSE_PLAN_INACTIVE');
     }
-    const { startsAt, endsAt } = buildLicenseDates(plan);
+    const { startsAt, endsAt } = buildLicenseDates(plan, input.startsAt);
     const result = await prisma_1.prisma.$transaction(async (tx) => {
         await tx.companyLicense.updateMany({
             where: {
@@ -525,6 +832,86 @@ async function assignCompanyLicense(input) {
     return {
         ok: true,
         license: result,
+    };
+}
+async function updateCompanyLicense(licenseId, input) {
+    const existing = await prisma_1.prisma.companyLicense.findUnique({
+        where: { id: licenseId },
+        include: { plan: true },
+    });
+    if (!existing) {
+        throw new Error('LICENSE_NOT_FOUND');
+    }
+    const plan = input.planId
+        ? await prisma_1.prisma.licensePlan.findUnique({ where: { id: input.planId } })
+        : existing.plan;
+    if (!plan) {
+        throw new Error('LICENSE_PLAN_NOT_FOUND');
+    }
+    if (!plan.active) {
+        throw new Error('LICENSE_PLAN_INACTIVE');
+    }
+    const data = {};
+    if (input.planId !== undefined) {
+        data.plan = { connect: { id: plan.id } };
+    }
+    if (input.status !== undefined) {
+        data.status = input.status;
+    }
+    const startsAtChanged = input.startsAt !== undefined;
+    const endsAtProvided = input.endsAt !== undefined;
+    if (startsAtChanged) {
+        const startsAt = parseDateInput(input.startsAt, existing.startsAt);
+        data.startsAt = startsAt;
+        if (!endsAtProvided) {
+            data.endsAt = plan.isLifetime ? null : buildLicenseDates(plan, startsAt).endsAt;
+        }
+    }
+    else if (input.planId !== undefined && !endsAtProvided) {
+        data.endsAt = plan.isLifetime ? null : buildLicenseDates(plan, existing.startsAt).endsAt;
+    }
+    if (endsAtProvided) {
+        data.endsAt = parseOptionalDateInput(input.endsAt);
+    }
+    if (input.notes !== undefined) {
+        data.notes = input.notes ?? null;
+    }
+    const license = await prisma_1.prisma.companyLicense.update({
+        where: { id: licenseId },
+        data,
+        include: {
+            plan: true,
+            company: true,
+            createdByAdmin: {
+                select: {
+                    id: true,
+                    username: true,
+                    name: true,
+                },
+            },
+        },
+    });
+    if (license.status === 'ACTIVE') {
+        await prisma_1.prisma.companyLicense.updateMany({
+            where: {
+                companyId: license.companyId,
+                status: 'ACTIVE',
+                id: { not: license.id },
+            },
+            data: { status: 'REPLACED' },
+        });
+        await prisma_1.prisma.company.update({
+            where: { id: license.companyId },
+            data: {
+                platformAccessStatus: 'ACTIVE',
+                platformBlockedAt: null,
+                platformBlockedReason: null,
+            },
+        });
+    }
+    return {
+        ok: true,
+        license,
     };
 }
 async function getAdminMe(adminId) {

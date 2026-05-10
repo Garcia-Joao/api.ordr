@@ -39,6 +39,14 @@ enum CompanyLicenseStatus {
   REPLACED
 }
 
+enum DeviceType {
+  DESKTOP
+  MOBILE
+  TABLET
+  UNKNOWN
+}
+
+
 model Company {
   id        String   @id @default(cuid())
   name      String
@@ -78,6 +86,7 @@ model Company {
   orderPrinterPaperWidth Int?
 
   platformLicenses CompanyLicense[]
+  devices          Device[]
 }
 
 model User {
@@ -102,6 +111,7 @@ model User {
   performedStockChanges     StockMovement[]      @relation("StockMovementPerformedBy")
   auditLogs                 AuditLog[]
   createdProductCostHistory ProductCostHistory[] @relation("ProductCostHistoryCreatedBy")
+  devices                   Device[]
 }
 
 model UserCompany {
@@ -402,6 +412,8 @@ model Order {
   paymentMethod      PaymentMethod?
   taxApplied         Boolean        @default(true)
 
+  deviceId String?
+
   createdByUserId    String?
   cancelledByUserId  String?
   cancelledAt        DateTime?
@@ -419,7 +431,8 @@ model Order {
   eventDate   EventDate? @relation(fields: [eventDateId], references: [id], onDelete: SetNull)
 
   createdByUser   User? @relation("OrderCreatedBy", fields: [createdByUserId], references: [id])
-  cancelledByUser User? @relation("OrderCancelledBy", fields: [cancelledByUserId], references: [id])
+  cancelledByUser User?  @relation("OrderCancelledBy", fields: [cancelledByUserId], references: [id])
+  device          Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
 
   @@index([companyId])
   @@index([eventDateId])
@@ -430,6 +443,7 @@ model Order {
   @@index([cancelledByUserId])
   @@index([cancelledAt])
   @@index([customerId])
+  @@index([deviceId])
 }
 
 model OrderItem {
@@ -982,6 +996,31 @@ model LicensePlan {
   @@index([slug])
   @@index([active])
   @@index([createdByAdminId])
+}
+
+model Device {
+  id            String     @id @default(cuid())
+  companyId     String
+  name          String
+  type          DeviceType @default(UNKNOWN)
+  browser       String?
+  os            String?
+  userAgent     String?
+  ipAddress     String?
+  firstSeenAt   DateTime   @default(now())
+  lastSeenAt    DateTime   @default(now())
+  currentUserId String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  currentUser User?   @relation(fields: [currentUserId], references: [id], onDelete: SetNull)
+  orders      Order[]
+
+  @@index([companyId])
+  @@index([currentUserId])
+  @@index([lastSeenAt])
+  @@index([type])
 }
 
 model CompanyLicense {

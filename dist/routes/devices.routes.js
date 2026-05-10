@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const devices_controller_1 = require("../controllers/devices.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const require_permission_middleware_1 = require("../middleware/require-permission.middleware");
+const router = (0, express_1.Router)();
+router.post('/heartbeat', auth_middleware_1.requireAuth, devices_controller_1.heartbeat);
+router.get('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('settings.view'), devices_controller_1.listDevices);
+router.delete('/:deviceId', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('settings.view'), devices_controller_1.deleteDevice);
+exports.default = router;

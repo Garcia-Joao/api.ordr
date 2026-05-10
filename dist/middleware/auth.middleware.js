@@ -44,9 +44,20 @@ async function requireAuth(req, res, next) {
         }
         const user = await authService.getUserFromToken(token);
         req.user = user;
+        const canPassInactiveLicense = req.baseUrl === '/auth' &&
+            (req.path === '/me' || req.path === '/switch-company' || req.path === '/logout');
+        if (!user.currentCompany?.licenseActive && !canPassInactiveLicense) {
+            return res.status(403).json({
+                error: 'COMPANY_LICENSE_INACTIVE',
+                company: user.currentCompany ?? null,
+            });
+        }
         return next();
     }
     catch (error) {
+        if (error?.message === 'ADMIN_ACCESS_REQUIRED') {
+            return res.status(403).json({ error: 'ADMIN_ACCESS_REQUIRED' });
+        }
         return res.status(401).json({ error: 'Unauthorized' });
     }
 }
