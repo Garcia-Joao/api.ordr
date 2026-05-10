@@ -19,9 +19,8 @@ const promises_1 = __importDefault(require("fs/promises"));
 const path_1 = __importDefault(require("path"));
 const client_1 = require("@prisma/client");
 const prisma_1 = require("../lib/prisma");
-const printers_service_1 = require("./printers.service");
+const print_jobs_service_1 = require("./print-jobs.service");
 const product_cost_history_service_1 = require("./product-cost-history.service");
-const { printRawThermalText } = require('../../printer.js');
 const DATA_DIR = path_1.default.resolve(process.cwd(), 'data');
 const CARTS_FILE = path_1.default.join(DATA_DIR, 'buy-carts.json');
 function cleanText(value) {
@@ -482,7 +481,7 @@ function buildShoppingListText(request) {
     lines.push('');
     return lines.join('\n');
 }
-async function printBuyRequestShoppingList(companyId, id) {
+async function printBuyRequestShoppingList(companyId, id, portId) {
     const request = await getBuyRequest(companyId, id);
     if (request.status !== 'pending') {
         throw new Error('ONLY_PENDING_BUY_REQUESTS_CAN_BE_PRINTED');
@@ -490,14 +489,15 @@ async function printBuyRequestShoppingList(companyId, id) {
     if (!request.items.length) {
         throw new Error('BUY_REQUEST_HAS_NO_ITEMS');
     }
-    const printerName = await (0, printers_service_1.getSelectedOrderPrinterName)();
-    if (!printerName) {
-        throw new Error('ORDER_PRINTER_NOT_CONFIGURED');
-    }
-    await printRawThermalText(buildShoppingListText(request), {
-        printerName,
-        feedLines: 6,
-        cut: true,
+    const jobs = await (0, print_jobs_service_1.createBuyRequestShoppingListPrintJobs)({
+        companyId,
+        buyRequestId: id,
+        portId: portId?.trim() || null,
     });
-    return { ok: true };
+    return {
+        ok: true,
+        jobs,
+        queuedCount: jobs.filter((job) => job.status === 'PENDING').length,
+        failedCount: jobs.filter((job) => job.status === 'FAILED').length,
+    };
 }

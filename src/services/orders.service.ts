@@ -1,7 +1,7 @@
 import { OrderStatus, Prisma, PaymentMethod } from '@prisma/client'
 import PDFDocument from 'pdfkit'
 import { prisma } from '../lib/prisma'
-import { printOrderTickets } from './printer.service'
+import { createOrderPrintJobs } from './print-jobs.service'
 import { createAuditLog } from './audit.service'
 
 type CreateOrderVariationOptionInput = {
@@ -925,64 +925,26 @@ const order = await prisma.$transaction(async (tx: any) => {
     return createdOrder
   })
 
+  let printJobs: any[] = []
+
   try {
-    console.log('[ORDER PRINT] Starting print', {
+    printJobs = await createOrderPrintJobs(order.companyId, order.id)
+
+    console.log('[ORDER PRINT JOBS] Created successfully', {
       orderId: order.id,
       companyId: order.companyId,
-      items: order.items.length,
-      printerPayloadItems: order.items.map((item: (typeof order.items)[number]) => ({
-        productName: item.product.name,
-        quantity: item.quantity,
-        variations: item.variations.length,
-        observation: order.observation ?? null,
-      })),
-    })
-
-    await printOrderTickets({
-      companyId: order.companyId,
-      id: order.id,
-      comanda: order.comanda,
-      comandaName: order.comandaName ?? null,
-      observation: order.observation ?? null,
-      createdAt: order.createdAt,
-      status: order.status,
-      internalCustomerName: order.internalCustomer?.name ?? null,
-      items: order.items.map((item: (typeof order.items)[number]) => ({
-        quantity: item.quantity,
-        notes: item.notes,
-        product: {
-          name: item.product.name,
-        },
-        variations: item.variations.map(
-          (variation: (typeof item.variations)[number]) => ({
-            group: {
-              name: variation.group.name,
-            },
-            options: variation.options.map(
-              (opt: (typeof variation.options)[number]) => ({
-                option: {
-                  name: opt.option.name,
-                },
-              })
-            ),
-          })
-        ),
-      })),
-    })
-
-    console.log('[ORDER PRINT] Printed successfully', {
-      orderId: order.id,
+      jobs: printJobs.length,
+      failedJobs: printJobs.filter((job: any) => job.status === 'FAILED').length,
     })
   } catch (error: any) {
-    console.error('[ORDER PRINT] Failed', {
+    // Printing must never cancel a sale that was already saved.
+    // If the terminal/port is offline, the order remains valid and we only log the issue.
+    console.error('[ORDER PRINT JOBS] Failed to create print jobs', {
       orderId: order.id,
       companyId: order.companyId,
       message: error?.message,
       stack: error?.stack,
-      error,
     })
-
-    throw error
   }
 
   return {
@@ -990,6 +952,7 @@ const order = await prisma.$transaction(async (tx: any) => {
     total: Number(order.total),
     paymentMethod: order.paymentMethod,
     taxApplied: order.taxApplied,
+    printJobs,
   }
 }
 

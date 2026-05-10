@@ -157,7 +157,13 @@ export async function printBuyRequestShoppingListController(req: Request, res: R
   try {
     const companyId = getCompanyId(req)
     const id = getSingleParam(req.params.id, 'BUY_REQUEST_ID')
-    return res.json(await printBuyRequestShoppingList(companyId, id))
+    return res.json(
+      await printBuyRequestShoppingList(
+        companyId,
+        id,
+        typeof req.body?.portId === 'string' ? req.body.portId : null
+      )
+    )
   } catch (error) {
     return handleError(res, error)
   }

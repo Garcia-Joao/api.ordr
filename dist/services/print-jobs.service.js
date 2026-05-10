@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createPrintJob = createPrintJob;
 exports.createOrderPrintJobs = createOrderPrintJobs;
+exports.createBuyRequestShoppingListPrintJobs = createBuyRequestShoppingListPrintJobs;
 exports.listTerminalPendingJobs = listTerminalPendingJobs;
 exports.claimPrintJob = claimPrintJob;
 exports.updatePrintJobStatus = updatePrintJobStatus;
@@ -169,6 +170,142 @@ async function createOrderPrintJobs(companyId, orderId) {
                 include: { port: { include: { bindings: true } }, order: true },
             }));
         }
+    }
+    return jobs.map(normalizeJob);
+}
+function formatChecklistQuantity(value, unit) {
+    const formatted = Number(value ?? 0).toLocaleString('pt-BR', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+    });
+    if (!unit || unit === 'unit')
+        return formatted;
+    return `${formatted} ${unit}`;
+}
+function buildBuyListPayload(request, port) {
+    return {
+        kind: 'BUY_LIST',
+        title: 'Lista de Compras',
+        buyRequestId: request.id,
+        buyRequestTitle: request.title?.trim() || 'Compra',
+        supplierName: request.supplierName?.trim() || null,
+        notes: request.notes?.trim() || null,
+        createdAt: new Date().toISOString(),
+        port: port ? { id: port.id, name: port.name } : null,
+        items: (request.items ?? []).map((item) => ({
+            name: item.product?.name ?? 'Item',
+            productId: item.productId,
+            quantity: Number(item.requestedQuantity ?? 0),
+            quantityLabel: formatChecklistQuantity(Number(item.requestedQuantity ?? 0), item.product?.stockUnit ?? 'unit'),
+            categoryName: item.product?.category?.name ?? null,
+            notes: item.notes ?? null,
+            checklist: true,
+        })),
+    };
+}
+async function createBuyRequestShoppingListPrintJobs(input) {
+    const request = await prisma_1.prisma.buyRequest.findFirst({
+        where: {
+            id: input.buyRequestId,
+            companyId: input.companyId,
+        },
+        include: {
+            items: {
+                include: {
+                    product: {
+                        include: {
+                            category: true,
+                        },
+                    },
+                },
+                orderBy: {
+                    createdAt: 'asc',
+                },
+            },
+        },
+    });
+    if (!request)
+        throw new Error('BUY_REQUEST_NOT_FOUND');
+    const port = input.portId
+        ? await prisma_1.prisma.printPort.findFirst({
+            where: {
+                id: input.portId,
+                companyId: input.companyId,
+                active: true,
+            },
+            include: {
+                bindings: {
+                    include: {
+                        terminalDevice: true,
+                    },
+                },
+            },
+        })
+        : await prisma_1.prisma.printPort.findFirst({
+            where: {
+                companyId: input.companyId,
+                active: true,
+            },
+            orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+            include: {
+                bindings: {
+                    include: {
+                        terminalDevice: true,
+                    },
+                },
+            },
+        });
+    if (!port) {
+        const failedJob = await prisma_1.prisma.printJob.create({
+            data: {
+                companyId: input.companyId,
+                orderId: null,
+                portId: null,
+                terminalDeviceId: null,
+                type: 'TEST',
+                status: 'FAILED',
+                errorMessage: 'PRINT_PORT_NOT_FOUND',
+                payload: buildBuyListPayload(request, null),
+            },
+            include: { port: { include: { bindings: true } }, order: true },
+        });
+        return [normalizeJob(failedJob)];
+    }
+    const bindings = (port.bindings ?? []).filter((binding) => binding.terminalDevice?.printTerminalEnabled &&
+        binding.terminalDevice?.clientType === 'ELECTRON' &&
+        isTerminalOnline(binding.terminalDevice));
+    if (bindings.length === 0) {
+        const failedJob = await prisma_1.prisma.printJob.create({
+            data: {
+                companyId: input.companyId,
+                orderId: null,
+                portId: port.id,
+                terminalDeviceId: null,
+                type: 'TEST',
+                status: 'FAILED',
+                errorMessage: 'PRINT_PORT_NOT_BOUND',
+                payload: buildBuyListPayload(request, port),
+            },
+            include: { port: { include: { bindings: true } }, order: true },
+        });
+        return [normalizeJob(failedJob)];
+    }
+    const uniqueTerminalIds = Array.from(new Set(bindings.map((binding) => binding.terminalDeviceId)));
+    const jobs = [];
+    for (const terminalDeviceId of uniqueTerminalIds) {
+        jobs.push(await prisma_1.prisma.printJob.create({
+            data: {
+                companyId: input.companyId,
+                orderId: null,
+                portId: port.id,
+                terminalDeviceId,
+                type: 'TEST',
+                status: 'PENDING',
+                errorMessage: null,
+                payload: buildBuyListPayload(request, port),
+            },
+            include: { port: { include: { bindings: true } }, order: true },
+        }));
     }
     return jobs.map(normalizeJob);
 }

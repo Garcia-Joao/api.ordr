@@ -15,7 +15,7 @@ exports.getOrdersReportSummary = getOrdersReportSummary;
 const client_1 = require("@prisma/client");
 const pdfkit_1 = __importDefault(require("pdfkit"));
 const prisma_1 = require("../lib/prisma");
-const printer_service_1 = require("./printer.service");
+const print_jobs_service_1 = require("./print-jobs.service");
 const audit_service_1 = require("./audit.service");
 function normalizeToBaseUnit(quantity, unit) {
     if (!Number.isFinite(quantity))
@@ -691,64 +691,32 @@ async function createOrder(data, userId) {
         });
         return createdOrder;
     });
+    let printJobs = [];
     try {
-        console.log('[ORDER PRINT] Starting print', {
+        printJobs = await (0, print_jobs_service_1.createOrderPrintJobs)(order.companyId, order.id);
+        console.log('[ORDER PRINT JOBS] Created successfully', {
             orderId: order.id,
             companyId: order.companyId,
-            items: order.items.length,
-            printerPayloadItems: order.items.map((item) => ({
-                productName: item.product.name,
-                quantity: item.quantity,
-                variations: item.variations.length,
-                observation: order.observation ?? null,
-            })),
-        });
-        await (0, printer_service_1.printOrderTickets)({
-            companyId: order.companyId,
-            id: order.id,
-            comanda: order.comanda,
-            comandaName: order.comandaName ?? null,
-            observation: order.observation ?? null,
-            createdAt: order.createdAt,
-            status: order.status,
-            internalCustomerName: order.internalCustomer?.name ?? null,
-            items: order.items.map((item) => ({
-                quantity: item.quantity,
-                notes: item.notes,
-                product: {
-                    name: item.product.name,
-                },
-                variations: item.variations.map((variation) => ({
-                    group: {
-                        name: variation.group.name,
-                    },
-                    options: variation.options.map((opt) => ({
-                        option: {
-                            name: opt.option.name,
-                        },
-                    })),
-                })),
-            })),
-        });
-        console.log('[ORDER PRINT] Printed successfully', {
-            orderId: order.id,
+            jobs: printJobs.length,
+            failedJobs: printJobs.filter((job) => job.status === 'FAILED').length,
         });
     }
     catch (error) {
-        console.error('[ORDER PRINT] Failed', {
+        // Printing must never cancel a sale that was already saved.
+        // If the terminal/port is offline, the order remains valid and we only log the issue.
+        console.error('[ORDER PRINT JOBS] Failed to create print jobs', {
             orderId: order.id,
             companyId: order.companyId,
             message: error?.message,
             stack: error?.stack,
-            error,
         });
-        throw error;
     }
     return {
         ...order,
         total: Number(order.total),
         paymentMethod: order.paymentMethod,
         taxApplied: order.taxApplied,
+        printJobs,
     };
 }
 async function getOrdersByCompany(companyId, includeCancelled = true) {

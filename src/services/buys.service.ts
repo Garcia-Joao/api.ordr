@@ -2,10 +2,9 @@ import fs from 'fs/promises'
 import path from 'path'
 import { BuyRequestItemStatus, BuyRequestStatus, Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
-import { getSelectedOrderPrinterName } from './printers.service'
+import { createBuyRequestShoppingListPrintJobs } from './print-jobs.service'
 import { createProductCostHistoryEntry } from './product-cost-history.service'
 
-const { printRawThermalText } = require('../../printer.js')
 
 type CartItemInput = {
   productId: string
@@ -600,7 +599,11 @@ function buildShoppingListText(request: Awaited<ReturnType<typeof getBuyRequest>
   return lines.join('\n')
 }
 
-export async function printBuyRequestShoppingList(companyId: string, id: string) {
+export async function printBuyRequestShoppingList(
+  companyId: string,
+  id: string,
+  portId?: string | null
+) {
   const request = await getBuyRequest(companyId, id)
 
   if (request.status !== 'pending') {
@@ -611,17 +614,16 @@ export async function printBuyRequestShoppingList(companyId: string, id: string)
     throw new Error('BUY_REQUEST_HAS_NO_ITEMS')
   }
 
-  const printerName = await getSelectedOrderPrinterName()
-
-  if (!printerName) {
-    throw new Error('ORDER_PRINTER_NOT_CONFIGURED')
-  }
-
-  await printRawThermalText(buildShoppingListText(request), {
-    printerName,
-    feedLines: 6,
-    cut: true,
+  const jobs = await createBuyRequestShoppingListPrintJobs({
+    companyId,
+    buyRequestId: id,
+    portId: portId?.trim() || null,
   })
 
-  return { ok: true }
+  return {
+    ok: true,
+    jobs,
+    queuedCount: jobs.filter((job: any) => job.status === 'PENDING').length,
+    failedCount: jobs.filter((job: any) => job.status === 'FAILED').length,
+  }
 }
