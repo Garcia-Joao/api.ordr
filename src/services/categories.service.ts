@@ -5,11 +5,13 @@ type CreateCategoryInput = {
   companyId: string
   name: string
   emoji?: string | null
+  printPortId?: string | null
 }
 
 type UpdateCategoryInput = {
   name?: string
   emoji?: string | null
+  printPortId?: string | null
 }
 
 function slugify(value: string) {
@@ -30,6 +32,8 @@ function normalizeCategory(category: any) {
     slug: category.slug ?? null,
     createdAt: category.createdAt,
     updatedAt: category.updatedAt,
+    printPortId: category.printPortId ?? null,
+    printPort: category.printPort ?? null,
   }
 }
 
@@ -40,6 +44,7 @@ export async function getCategoriesByCompany(companyId: string) {
       deletedAt: null,
     },
     orderBy: { name: 'asc' },
+    include: { printPort: true },
   })
 
   return categories.map(normalizeCategory)
@@ -52,6 +57,7 @@ export async function getCategoryById(categoryId: string, companyId: string) {
       companyId,
       deletedAt: null,
     },
+    include: { printPort: true },
   })
 
   if (!category) {
@@ -75,6 +81,7 @@ export async function createCategory(data: CreateCategoryInput, userId: string) 
         createdByUserId: userId,
         updatedByUserId: userId,
         ...(data.emoji !== undefined ? { emoji: data.emoji } : {}),
+        ...(data.printPortId !== undefined ? { printPortId: data.printPortId || null } : {}),
       },
     })
 
@@ -127,6 +134,7 @@ export async function updateCategory(
         slug: data.name === undefined ? existingCategory.slug : slugify(data.name),
         updatedByUserId: userId,
         ...(data.emoji !== undefined ? { emoji: data.emoji } : {}),
+        ...(data.printPortId !== undefined ? { printPortId: data.printPortId || null } : {}),
       },
     })
 

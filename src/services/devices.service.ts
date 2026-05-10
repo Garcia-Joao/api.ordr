@@ -1,17 +1,9 @@
-import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 
 const ONLINE_THRESHOLD_MS = 2 * 60 * 1000
 
 type DeviceType = 'DESKTOP' | 'MOBILE' | 'TABLET' | 'UNKNOWN'
 type DeviceClientType = 'WEB' | 'ELECTRON'
-
-type LocalPrinterInput = {
-  name?: string | null
-  displayName?: string | null
-  description?: string | null
-  isDefault?: boolean | null
-}
 
 type HeartbeatInput = {
   companyId: string
@@ -26,7 +18,7 @@ type HeartbeatInput = {
   clientType?: string | null
   isPrintTerminal?: boolean | null
   printTerminalEnabled?: boolean | null
-  localPrinters?: LocalPrinterInput[] | null
+  localPrinters?: unknown
 }
 
 function normalizeDeviceType(value?: string | null): DeviceType {
@@ -48,29 +40,6 @@ function cleanText(value?: string | null, fallback = '') {
   return text || fallback
 }
 
-function sanitizeLocalPrinters(value?: LocalPrinterInput[] | null) {
-  if (!Array.isArray(value)) return null
-
-  return value
-    .slice(0, 50)
-    .map((printer) => ({
-      name: cleanText(printer?.name, ''),
-      displayName: cleanText(printer?.displayName, '') || null,
-      description: cleanText(printer?.description, '') || null,
-      isDefault: Boolean(printer?.isDefault),
-    }))
-    .filter((printer) => printer.name)
-}
-
-async function userIsCompanyAdmin(userId: string, companyId: string) {
-  const membership = await prisma.userCompany.findUnique({
-    where: { userId_companyId: { userId, companyId } },
-    select: { systemRole: true },
-  })
-
-  return membership?.systemRole === 'ADMIN'
-}
-
 function getStartOfToday() {
   const date = new Date()
   date.setHours(0, 0, 0, 0)
@@ -86,29 +55,22 @@ function getDeviceStatus(lastSeenAt: Date) {
 export async function heartbeatDevice(input: HeartbeatInput) {
   const now = new Date()
   const id = cleanText(input.deviceId, '')
-  const clientType = normalizeClientType(input.clientType)
-  const requestedPrintTerminal = Boolean(input.isPrintTerminal || input.printTerminalEnabled)
-  const canEnablePrintTerminal =
-    clientType === 'ELECTRON' && requestedPrintTerminal
-      ? await userIsCompanyAdmin(input.userId, input.companyId)
-      : false
-
   const baseData = {
     companyId: input.companyId,
     currentUserId: input.userId,
     name: cleanText(input.name, 'Dispositivo sem nome'),
     type: normalizeDeviceType(input.type),
-    clientType,
-    isPrintTerminal: canEnablePrintTerminal,
-    printTerminalEnabled: canEnablePrintTerminal,
-    terminalApprovedAt: canEnablePrintTerminal ? now : null,
-    localPrinters: clientType === 'ELECTRON' ? sanitizeLocalPrinters(input.localPrinters) ?? Prisma.JsonNull : Prisma.JsonNull,
     browser: cleanText(input.browser, '') || null,
     os: cleanText(input.os, '') || null,
     userAgent: cleanText(input.userAgent, '') || null,
     ipAddress: cleanText(input.ipAddress, '') || null,
+    clientType: normalizeClientType(input.clientType),
+    isPrintTerminal: Boolean(input.isPrintTerminal) && normalizeClientType(input.clientType) === 'ELECTRON',
+    printTerminalEnabled: Boolean(input.printTerminalEnabled) && normalizeClientType(input.clientType) === 'ELECTRON',
+    terminalApprovedAt: Boolean(input.printTerminalEnabled) && normalizeClientType(input.clientType) === 'ELECTRON' ? now : null,
+    localPrinters: Array.isArray(input.localPrinters) ? (input.localPrinters as any) : undefined,
     lastSeenAt: now,
-  }
+  } as any
 
   const device = id
     ? await prisma.device.upsert({
@@ -133,13 +95,13 @@ export async function heartbeatDevice(input: HeartbeatInput) {
     id: device.id,
     name: device.name,
     type: device.type,
-    clientType: device.clientType,
-    isPrintTerminal: device.isPrintTerminal,
-    printTerminalEnabled: device.printTerminalEnabled,
-    localPrinters: device.localPrinters,
     status: getDeviceStatus(device.lastSeenAt),
     lastSeenAt: device.lastSeenAt.toISOString(),
     currentUser: device.currentUser,
+    clientType: (device as any).clientType ?? 'WEB',
+    isPrintTerminal: Boolean((device as any).isPrintTerminal),
+    printTerminalEnabled: Boolean((device as any).printTerminalEnabled),
+    localPrinters: (device as any).localPrinters ?? [],
   }
 }
 
@@ -198,15 +160,15 @@ export async function listCompanyDevices(companyId: string) {
       os: device.os,
       userAgent: device.userAgent,
       ipAddress: device.ipAddress,
-      clientType: device.clientType,
-      isPrintTerminal: device.isPrintTerminal,
-      printTerminalEnabled: device.printTerminalEnabled,
-      localPrinters: device.localPrinters,
-      terminalApprovedAt: device.terminalApprovedAt?.toISOString() ?? null,
       firstSeenAt: device.firstSeenAt.toISOString(),
       lastSeenAt: device.lastSeenAt.toISOString(),
       status: getDeviceStatus(device.lastSeenAt),
       currentUser: device.currentUser,
+      clientType: (device as any).clientType ?? 'WEB',
+      isPrintTerminal: Boolean((device as any).isPrintTerminal),
+      printTerminalEnabled: Boolean((device as any).printTerminalEnabled),
+      terminalApprovedAt: (device as any).terminalApprovedAt?.toISOString?.() ?? null,
+      localPrinters: (device as any).localPrinters ?? [],
       salesCount: deviceSales.salesCount,
       totalSales: deviceSales.totalSales,
     }

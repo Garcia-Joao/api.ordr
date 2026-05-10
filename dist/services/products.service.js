@@ -118,6 +118,7 @@ function productAuditSnapshot(product) {
         description: product.description ?? null,
         emoji: product.emoji ?? null,
         categoryId: product.categoryId,
+        printPortId: product.printPortId ?? null,
         categoryName: product.category?.name ?? null,
         price: decimalAuditValue(product.price),
         active: product.active,
@@ -391,6 +392,7 @@ async function validateRecipeCycle(companyId, productId, recipeItems, visited = 
 }
 const productInclude = {
     category: true,
+    printPort: true,
     environmentPrices: {
         include: {
             salesEnvironment: true,
@@ -544,6 +546,7 @@ async function createProduct(data, userId) {
             ? null
             : new client_1.Prisma.Decimal(data.recipeOutputQuantity),
         recipeOutputUnit: data.recipeOutputUnit ?? null,
+        printPortId: data.printPortId || null,
         recipeItems: {
             create: (data.recipeItems ?? []).map((item) => ({
                 ingredientProductId: item.ingredientProductId,
@@ -922,11 +925,13 @@ async function updateProduct(productId, companyId, data, userId) {
                 recipeOutputUnit: data.recipeOutputUnit === undefined
                     ? existingProduct.recipeOutputUnit
                     : data.recipeOutputUnit,
-                updatedByUser: {
-                    connect: {
-                        id: userId,
-                    },
-                },
+                ...(data.printPortId !== undefined
+                    ? {
+                        printPort: data.printPortId
+                            ? { connect: { id: data.printPortId } }
+                            : { disconnect: true },
+                    }
+                    : {}),
                 ...(data.recipeItems
                     ? {
                         recipeItems: {

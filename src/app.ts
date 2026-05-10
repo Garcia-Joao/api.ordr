@@ -21,6 +21,7 @@ import router from './routes/product-cost-history.routes'
 import accessRoutes from './routes/access.routes'
 import auditRoutes from './routes/audit.routes'
 import devicesRoutes from './routes/devices.routes'
+import printJobsRoutes from './routes/print-jobs.routes'
 import adminRouter from './routes/admin.routes'
 
 import { prisma } from './lib/prisma'
@@ -40,7 +41,6 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   process.env.FRONTEND_LAN_URL,
   process.env.ADMIN_FRONTEND_URL,
-  process.env.TERMINAL_FRONTEND_URL,
 ].filter(Boolean) as string[]
 
 app.use((req, _res, next) => {
@@ -88,14 +88,6 @@ app.get('/health', async (_req, res) => {
   }
 })
 
-app.get('/auth/me', (req, res, next) => {
-  if (!req.cookies?.auth) {
-    return res.status(401).json({ error: 'UNAUTHORIZED' })
-  }
-
-  return next()
-})
-
 app.use('/admin', adminRouter)
 app.use('/auth', authRouter)
 app.use('/products', productsRouter)
@@ -116,5 +108,6 @@ app.use('/product-cost-history', router)
 app.use('/access', accessRoutes)
 app.use('/audit', auditRoutes)
 app.use('/devices', devicesRoutes)
+app.use('/print-jobs', printJobsRoutes)
 
 export default app

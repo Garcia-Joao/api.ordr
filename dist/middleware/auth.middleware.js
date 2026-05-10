@@ -38,7 +38,11 @@ const authService = __importStar(require("../services/auth.service"));
 const COOKIE_NAME = 'auth';
 async function requireAuth(req, res, next) {
     try {
-        const token = req.cookies?.[COOKIE_NAME];
+        const bearerToken = typeof req.headers.authorization === 'string' &&
+            req.headers.authorization.startsWith('Bearer ')
+            ? req.headers.authorization.slice('Bearer '.length)
+            : null;
+        const token = bearerToken || req.cookies?.[COOKIE_NAME];
         if (!token) {
             return res.status(401).json({ error: 'Unauthorized' });
         }

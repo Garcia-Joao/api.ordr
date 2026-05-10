@@ -1,100 +1,236 @@
 "use strict";
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getSystemPrinters = getSystemPrinters;
+exports.getPrintTerminals = getPrintTerminals;
+exports.listPrintPorts = listPrintPorts;
+exports.createPrintPort = createPrintPort;
+exports.updatePrintPort = updatePrintPort;
+exports.deletePrintPort = deletePrintPort;
+exports.bindPrintPort = bindPrintPort;
 exports.getPrinterSettings = getPrinterSettings;
 exports.savePrinterSettings = savePrinterSettings;
+exports.testPrinter = testPrinter;
 exports.getSelectedOrderPrinter = getSelectedOrderPrinter;
 exports.getOrderTicketTemplate = getOrderTicketTemplate;
 exports.getSelectedOrderPrinterName = getSelectedOrderPrinterName;
-exports.testPrinter = testPrinter;
-const promises_1 = __importDefault(require("fs/promises"));
-const path_1 = __importDefault(require("path"));
+const prisma_1 = require("../lib/prisma");
+const ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
 const { listGenericTextPrinters, printRawThermalText, } = require('../../printer.js');
-const DATA_DIR = path_1.default.resolve(process.cwd(), 'data');
-const SETTINGS_FILE = path_1.default.join(DATA_DIR, 'printer-settings.json');
-const defaultSettings = {
-    printers: [],
-    orderPrinterId: null,
-    orderTicketTemplate: {
-        showLogo: true,
-        showOrderId: true,
-        showDate: true,
-        showComandaName: true,
-        showVariations: true,
-        showNotes: true,
-        headerText: '*** ORDR ***',
-        footerText: '',
-    },
-};
-async function ensureDataDir() {
-    await promises_1.default.mkdir(DATA_DIR, { recursive: true });
+function cleanText(value) {
+    const text = String(value ?? '').trim();
+    return text || null;
 }
-async function readSettings() {
-    try {
-        const content = await promises_1.default.readFile(SETTINGS_FILE, 'utf-8');
-        const parsed = JSON.parse(content);
-        return {
-            ...defaultSettings,
-            ...parsed,
-            orderTicketTemplate: {
-                ...defaultSettings.orderTicketTemplate,
-                ...(parsed.orderTicketTemplate ?? {}),
-            },
-            printers: Array.isArray(parsed.printers) ? parsed.printers : [],
-        };
-    }
-    catch {
-        return defaultSettings;
-    }
+function isOnline(value) {
+    if (!value)
+        return false;
+    return Date.now() - value.getTime() <= ONLINE_THRESHOLD_MS;
 }
-async function writeSettings(settings) {
-    await ensureDataDir();
-    await promises_1.default.writeFile(SETTINGS_FILE, JSON.stringify(settings, null, 2), 'utf-8');
+function normalizePort(port) {
+    return {
+        id: port.id,
+        companyId: port.companyId,
+        name: port.name,
+        description: port.description ?? null,
+        active: Boolean(port.active),
+        sortOrder: Number(port.sortOrder ?? 0),
+        terminalDeviceId: port.terminalDeviceId ?? null,
+        localPrinterName: port.localPrinterName ?? null,
+        localPrinterLabel: port.localPrinterLabel ?? null,
+        paperWidth: port.paperWidth ?? null,
+        createdAt: port.createdAt?.toISOString?.() ?? port.createdAt,
+        updatedAt: port.updatedAt?.toISOString?.() ?? port.updatedAt,
+        terminalDevice: port.terminalDevice
+            ? {
+                id: port.terminalDevice.id,
+                name: port.terminalDevice.name,
+                clientType: port.terminalDevice.clientType,
+                isPrintTerminal: port.terminalDevice.isPrintTerminal,
+                printTerminalEnabled: port.terminalDevice.printTerminalEnabled,
+                localPrinters: port.terminalDevice.localPrinters ?? [],
+                lastSeenAt: port.terminalDevice.lastSeenAt?.toISOString?.() ?? port.terminalDevice.lastSeenAt,
+                status: isOnline(port.terminalDevice.lastSeenAt) ? 'online' : 'offline',
+                currentUser: port.terminalDevice.currentUser ?? null,
+            }
+            : null,
+    };
+}
+function normalizeTerminal(device) {
+    return {
+        id: device.id,
+        name: device.name,
+        type: device.type,
+        clientType: device.clientType,
+        isPrintTerminal: device.isPrintTerminal,
+        printTerminalEnabled: device.printTerminalEnabled,
+        terminalApprovedAt: device.terminalApprovedAt?.toISOString?.() ?? null,
+        localPrinters: device.localPrinters ?? [],
+        browser: device.browser,
+        os: device.os,
+        ipAddress: device.ipAddress,
+        lastSeenAt: device.lastSeenAt?.toISOString?.() ?? device.lastSeenAt,
+        status: isOnline(device.lastSeenAt) ? 'online' : 'offline',
+        currentUser: device.currentUser ?? null,
+    };
+}
+async function assertPortDevice(companyId, terminalDeviceId) {
+    if (!terminalDeviceId)
+        return null;
+    const device = await prisma_1.prisma.device.findFirst({
+        where: {
+            id: terminalDeviceId,
+            companyId,
+            clientType: 'ELECTRON',
+            isPrintTerminal: true,
+            printTerminalEnabled: true,
+        },
+        select: { id: true },
+    });
+    if (!device) {
+        throw new Error('PRINT_TERMINAL_NOT_FOUND');
+    }
+    return device.id;
 }
 async function getSystemPrinters() {
     return await listGenericTextPrinters();
 }
-async function getPrinterSettings() {
-    return await readSettings();
+async function getPrintTerminals(companyId) {
+    const devices = await prisma_1.prisma.device.findMany({
+        where: {
+            companyId,
+            clientType: 'ELECTRON',
+            isPrintTerminal: true,
+        },
+        include: {
+            currentUser: { select: { id: true, username: true, name: true } },
+        },
+        orderBy: [{ lastSeenAt: 'desc' }, { name: 'asc' }],
+    });
+    return devices.map(normalizeTerminal);
+}
+async function listPrintPorts(companyId) {
+    const ports = await prisma_1.prisma.printPort.findMany({
+        where: { companyId },
+        include: {
+            terminalDevice: {
+                include: {
+                    currentUser: { select: { id: true, username: true, name: true } },
+                },
+            },
+        },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+    });
+    return ports.map(normalizePort);
+}
+async function createPrintPort(companyId, input) {
+    const name = cleanText(input.name);
+    if (!name)
+        throw new Error('PRINT_PORT_NAME_REQUIRED');
+    const terminalDeviceId = await assertPortDevice(companyId, input.terminalDeviceId);
+    const port = await prisma_1.prisma.printPort.create({
+        data: {
+            companyId,
+            name,
+            description: cleanText(input.description),
+            active: input.active ?? true,
+            sortOrder: Number(input.sortOrder ?? 0),
+            terminalDeviceId,
+            localPrinterName: cleanText(input.localPrinterName),
+            localPrinterLabel: cleanText(input.localPrinterLabel),
+            paperWidth: input.paperWidth ? Number(input.paperWidth) : null,
+        },
+        include: {
+            terminalDevice: {
+                include: {
+                    currentUser: { select: { id: true, username: true, name: true } },
+                },
+            },
+        },
+    });
+    return normalizePort(port);
+}
+async function updatePrintPort(companyId, portId, input) {
+    const existing = await prisma_1.prisma.printPort.findFirst({ where: { id: portId, companyId } });
+    if (!existing)
+        throw new Error('PRINT_PORT_NOT_FOUND');
+    const terminalDeviceId = input.terminalDeviceId === undefined
+        ? existing.terminalDeviceId
+        : await assertPortDevice(companyId, input.terminalDeviceId);
+    const port = await prisma_1.prisma.printPort.update({
+        where: { id: portId },
+        data: {
+            ...(input.name !== undefined ? { name: cleanText(input.name) ?? existing.name } : {}),
+            ...(input.description !== undefined ? { description: cleanText(input.description) } : {}),
+            ...(input.active !== undefined ? { active: Boolean(input.active) } : {}),
+            ...(input.sortOrder !== undefined ? { sortOrder: Number(input.sortOrder ?? 0) } : {}),
+            ...(input.terminalDeviceId !== undefined ? { terminalDeviceId } : {}),
+            ...(input.localPrinterName !== undefined ? { localPrinterName: cleanText(input.localPrinterName) } : {}),
+            ...(input.localPrinterLabel !== undefined ? { localPrinterLabel: cleanText(input.localPrinterLabel) } : {}),
+            ...(input.paperWidth !== undefined ? { paperWidth: input.paperWidth ? Number(input.paperWidth) : null } : {}),
+        },
+        include: {
+            terminalDevice: {
+                include: {
+                    currentUser: { select: { id: true, username: true, name: true } },
+                },
+            },
+        },
+    });
+    return normalizePort(port);
+}
+async function deletePrintPort(companyId, portId) {
+    const existing = await prisma_1.prisma.printPort.findFirst({ where: { id: portId, companyId } });
+    if (!existing)
+        throw new Error('PRINT_PORT_NOT_FOUND');
+    await prisma_1.prisma.printPort.delete({ where: { id: portId } });
+    return { ok: true };
+}
+async function bindPrintPort(companyId, portId, input) {
+    return updatePrintPort(companyId, portId, {
+        terminalDeviceId: input.terminalDeviceId ?? null,
+        localPrinterName: input.localPrinterName ?? null,
+        localPrinterLabel: input.localPrinterLabel ?? null,
+        paperWidth: input.paperWidth ?? null,
+    });
+}
+async function getPrinterSettings(companyId) {
+    if (!companyId) {
+        return {
+            ports: [],
+            terminals: [],
+            printers: [],
+            orderPrinterId: null,
+            orderTicketTemplate: defaultTemplate,
+        };
+    }
+    const [ports, terminals] = await Promise.all([
+        listPrintPorts(companyId),
+        getPrintTerminals(companyId),
+    ]);
+    return {
+        ports,
+        terminals,
+        printers: [],
+        orderPrinterId: null,
+        orderTicketTemplate: defaultTemplate,
+    };
 }
 async function savePrinterSettings(input) {
-    const settings = {
-        printers: Array.isArray(input.printers) ? input.printers : [],
-        orderPrinterId: input.orderPrinterId ?? null,
-        orderTicketTemplate: {
-            ...defaultSettings.orderTicketTemplate,
-            ...(input.orderTicketTemplate ?? {}),
-        },
-    };
-    await writeSettings(settings);
-    return settings;
+    return input;
 }
-async function getSelectedOrderPrinter() {
-    const settings = await readSettings();
-    if (!settings.orderPrinterId)
-        return null;
-    return (settings.printers.find((printer) => printer.id === settings.orderPrinterId) ??
-        null);
-}
-async function getOrderTicketTemplate() {
-    const settings = await readSettings();
-    return settings.orderTicketTemplate;
-}
-async function getSelectedOrderPrinterName() {
-    const printer = await getSelectedOrderPrinter();
-    return printer?.systemName?.trim() || null;
-}
+const defaultTemplate = {
+    showLogo: true,
+    showOrderId: true,
+    showDate: true,
+    showComandaName: true,
+    showVariations: true,
+    showNotes: true,
+    headerText: '*** ORDR ***',
+    footerText: '',
+};
 async function testPrinter(printerNameFromRequest) {
-    let printerName = printerNameFromRequest?.trim();
-    if (!printerName) {
-        printerName = await getSelectedOrderPrinterName();
-    }
-    if (!printerName) {
+    const printerName = printerNameFromRequest?.trim();
+    if (!printerName)
         throw new Error('PRINTER_NOT_CONFIGURED');
-    }
     const content = [
         '*** ORDR ***',
         'TESTE DE IMPRESSAO',
@@ -109,4 +245,15 @@ async function testPrinter(printerNameFromRequest) {
         cut: true,
     });
     return { ok: true };
+}
+// Legacy helpers kept for old local-print code paths. In hosted mode, order
+// printing should use PrintJob queue + Electron terminal instead.
+async function getSelectedOrderPrinter() {
+    return null;
+}
+async function getOrderTicketTemplate() {
+    return defaultTemplate;
+}
+async function getSelectedOrderPrinterName() {
+    return null;
 }

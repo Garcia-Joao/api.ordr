@@ -24,6 +24,8 @@ function normalizeCategory(category) {
         slug: category.slug ?? null,
         createdAt: category.createdAt,
         updatedAt: category.updatedAt,
+        printPortId: category.printPortId ?? null,
+        printPort: category.printPort ?? null,
     };
 }
 async function getCategoriesByCompany(companyId) {
@@ -33,6 +35,7 @@ async function getCategoriesByCompany(companyId) {
             deletedAt: null,
         },
         orderBy: { name: 'asc' },
+        include: { printPort: true },
     });
     return categories.map(normalizeCategory);
 }
@@ -43,6 +46,7 @@ async function getCategoryById(categoryId, companyId) {
             companyId,
             deletedAt: null,
         },
+        include: { printPort: true },
     });
     if (!category) {
         return null;
@@ -62,6 +66,7 @@ async function createCategory(data, userId) {
                 createdByUserId: userId,
                 updatedByUserId: userId,
                 ...(data.emoji !== undefined ? { emoji: data.emoji } : {}),
+                ...(data.printPortId !== undefined ? { printPortId: data.printPortId || null } : {}),
             },
         });
         await (0, audit_service_1.createAuditLog)(tx, {
@@ -102,6 +107,7 @@ async function updateCategory(categoryId, companyId, data, userId) {
                 slug: data.name === undefined ? existingCategory.slug : slugify(data.name),
                 updatedByUserId: userId,
                 ...(data.emoji !== undefined ? { emoji: data.emoji } : {}),
+                ...(data.printPortId !== undefined ? { printPortId: data.printPortId || null } : {}),
             },
         });
         await (0, audit_service_1.createAuditLog)(tx, {

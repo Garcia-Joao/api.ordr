@@ -9,4 +9,10 @@ router.get('/system', auth_middleware_1.requireAuth, (0, require_permission_midd
 router.get('/settings', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.view'), printers_controller_1.getPrinterSettings);
 router.put('/settings', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.update'), printers_controller_1.savePrinterSettings);
 router.post('/test', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.test'), printers_controller_1.testPrinter);
+router.get('/terminals', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.view'), printers_controller_1.getPrintTerminals);
+router.get('/ports', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.view'), printers_controller_1.listPrintPorts);
+router.post('/ports', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.update'), printers_controller_1.createPrintPort);
+router.put('/ports/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.update'), printers_controller_1.updatePrintPort);
+router.patch('/ports/:id/binding', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.update'), printers_controller_1.bindPrintPort);
+router.delete('/ports/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.update'), printers_controller_1.deletePrintPort);
 exports.default = router;

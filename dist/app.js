@@ -25,6 +25,7 @@ const product_cost_history_routes_1 = __importDefault(require("./routes/product-
 const access_routes_1 = __importDefault(require("./routes/access.routes"));
 const audit_routes_1 = __importDefault(require("./routes/audit.routes"));
 const devices_routes_1 = __importDefault(require("./routes/devices.routes"));
+const print_jobs_routes_1 = __importDefault(require("./routes/print-jobs.routes"));
 const admin_routes_1 = __importDefault(require("./routes/admin.routes"));
 const prisma_1 = require("./lib/prisma");
 const app = (0, express_1.default)();
@@ -41,7 +42,6 @@ const allowedOrigins = [
     process.env.FRONTEND_URL,
     process.env.FRONTEND_LAN_URL,
     process.env.ADMIN_FRONTEND_URL,
-    process.env.TERMINAL_FRONTEND_URL,
 ].filter(Boolean);
 app.use((req, _res, next) => {
     console.log('[request]', req.method, req.path, 'origin:', req.headers.origin);
@@ -80,12 +80,6 @@ app.get('/health', async (_req, res) => {
         });
     }
 });
-app.get('/auth/me', (req, res, next) => {
-    if (!req.cookies?.auth) {
-        return res.status(401).json({ error: 'UNAUTHORIZED' });
-    }
-    return next();
-});
 app.use('/admin', admin_routes_1.default);
 app.use('/auth', auth_routes_1.default);
 app.use('/products', products_routes_1.default);
@@ -106,4 +100,5 @@ app.use('/product-cost-history', product_cost_history_routes_1.default);
 app.use('/access', access_routes_1.default);
 app.use('/audit', audit_routes_1.default);
 app.use('/devices', devices_routes_1.default);
+app.use('/print-jobs', print_jobs_routes_1.default);
 exports.default = app;

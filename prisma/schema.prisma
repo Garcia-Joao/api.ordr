@@ -51,6 +51,20 @@ enum DeviceClientType {
   ELECTRON
 }
 
+enum PrintJobStatus {
+  PENDING
+  CLAIMED
+  PRINTING
+  PRINTED
+  FAILED
+  CANCELLED
+}
+
+enum PrintJobType {
+  ORDER_TICKET
+  TEST
+}
+
 
 model Company {
   id        String   @id @default(cuid())
@@ -92,6 +106,8 @@ model Company {
 
   platformLicenses CompanyLicense[]
   devices          Device[]
+  printPorts       PrintPort[]
+  printJobs        PrintJob[]
 }
 
 model User {
@@ -185,6 +201,8 @@ model Category {
   updatedAt DateTime @updatedAt
   emoji     String?
 
+  printPortId String?
+
   createdByUserId String?
   updatedByUserId String?
   deletedByUserId String?
@@ -193,6 +211,7 @@ model Category {
   company     Company              @relation(fields: [companyId], references: [id], onDelete: Cascade)
   products    Product[]
   costHistory ProductCostHistory[]
+  printPort   PrintPort?           @relation("CategoryPrintPort", fields: [printPortId], references: [id], onDelete: SetNull)
 
   createdByUser User? @relation("CategoryCreatedBy", fields: [createdByUserId], references: [id])
   updatedByUser User? @relation("CategoryUpdatedBy", fields: [updatedByUserId], references: [id])
@@ -203,6 +222,7 @@ model Category {
   @@index([updatedByUserId])
   @@index([deletedByUserId])
   @@index([deletedAt])
+  @@index([printPortId])
 }
 
 model Product {
@@ -233,6 +253,8 @@ model Product {
   recipeOutputQuantity Decimal?   @db.Decimal(10, 3)
   recipeOutputUnit     StockUnit?
 
+  printPortId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -243,6 +265,7 @@ model Product {
 
   company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  printPort PrintPort? @relation("ProductPrintPort", fields: [printPortId], references: [id], onDelete: SetNull)
 
   createdByUser User? @relation("ProductCreatedBy", fields: [createdByUserId], references: [id])
   updatedByUser User? @relation("ProductUpdatedBy", fields: [updatedByUserId], references: [id])
@@ -266,6 +289,7 @@ model Product {
   @@index([updatedByUserId])
   @@index([deletedByUserId])
   @@index([deletedAt])
+  @@index([printPortId])
 }
 
 model ProductRecipeItem {
@@ -438,6 +462,7 @@ model Order {
   createdByUser   User? @relation("OrderCreatedBy", fields: [createdByUserId], references: [id])
   cancelledByUser User?  @relation("OrderCancelledBy", fields: [cancelledByUserId], references: [id])
   device          Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  printJobs       PrintJob[]
 
   @@index([companyId])
   @@index([eventDateId])
@@ -1011,6 +1036,7 @@ model Device {
   clientType           DeviceClientType @default(WEB)
   isPrintTerminal      Boolean          @default(false)
   printTerminalEnabled Boolean          @default(false)
+  terminalApprovedAt   DateTime?
   localPrinters        Json?
   browser              String?
   os                   String?
@@ -1018,14 +1044,15 @@ model Device {
   ipAddress            String?
   firstSeenAt          DateTime         @default(now())
   lastSeenAt           DateTime         @default(now())
-  terminalApprovedAt   DateTime?
   currentUserId        String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
 
-  company     Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  currentUser User?   @relation(fields: [currentUserId], references: [id], onDelete: SetNull)
-  orders      Order[]
+  company            Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  currentUser        User?       @relation(fields: [currentUserId], references: [id], onDelete: SetNull)
+  orders             Order[]
+  boundPrintPorts    PrintPort[] @relation("DevicePrintPortBindings")
+  printJobs          PrintJob[]
 
   @@index([companyId])
   @@index([currentUserId])
@@ -1033,7 +1060,65 @@ model Device {
   @@index([type])
   @@index([clientType])
   @@index([isPrintTerminal])
-  @@index([printTerminalEnabled])
+}
+
+
+model PrintPort {
+  id                 String   @id @default(cuid())
+  companyId          String
+  name               String
+  description        String?
+  active             Boolean  @default(true)
+  sortOrder          Int      @default(0)
+  terminalDeviceId   String?
+  localPrinterName   String?
+  localPrinterLabel  String?
+  paperWidth         Int?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  company        Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  terminalDevice Device?    @relation("DevicePrintPortBindings", fields: [terminalDeviceId], references: [id], onDelete: SetNull)
+  categories     Category[] @relation("CategoryPrintPort")
+  products       Product[]  @relation("ProductPrintPort")
+  printJobs      PrintJob[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([terminalDeviceId])
+  @@index([active])
+  @@index([sortOrder])
+}
+
+model PrintJob {
+  id               String         @id @default(cuid())
+  companyId        String
+  orderId          String?
+  portId           String?
+  terminalDeviceId String?
+  type             PrintJobType   @default(ORDER_TICKET)
+  status           PrintJobStatus @default(PENDING)
+  payload          Json
+  attempts         Int            @default(0)
+  errorMessage     String?
+  claimedAt        DateTime?
+  startedAt        DateTime?
+  printedAt        DateTime?
+  failedAt         DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  company        Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  order          Order?     @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  port           PrintPort? @relation(fields: [portId], references: [id], onDelete: SetNull)
+  terminalDevice Device?    @relation(fields: [terminalDeviceId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
+  @@index([orderId])
+  @@index([portId])
+  @@index([terminalDeviceId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model CompanyLicense {

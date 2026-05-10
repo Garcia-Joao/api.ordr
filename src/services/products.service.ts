@@ -34,6 +34,7 @@ type VariationOptionInput = {
 
   environmentPrices?: VariationOptionEnvironmentPriceInput[];
   recipeItems?: RecipeItemInput[];
+  printPortId?: string | null;
 };
 
 type VariationGroupInput = {
@@ -71,6 +72,7 @@ type CreateProductInput = {
   recipeOutputQuantity?: number | null;
   recipeOutputUnit?: "unit" | "ml" | "l" | "g" | "kg" | null;
   recipeItems?: RecipeItemInput[];
+  printPortId?: string | null;
 };
 
 type UpdateProductInput = {
@@ -98,6 +100,7 @@ type UpdateProductInput = {
   recipeOutputQuantity?: number | null;
   recipeOutputUnit?: "unit" | "ml" | "l" | "g" | "kg" | null;
   recipeItems?: RecipeItemInput[];
+  printPortId?: string | null;
 };
 
 function convertToBaseUnit(quantity: number, unit: string): number {
@@ -233,6 +236,7 @@ function productAuditSnapshot(product: any) {
     description: product.description ?? null,
     emoji: product.emoji ?? null,
     categoryId: product.categoryId,
+    printPortId: product.printPortId ?? null,
     categoryName: product.category?.name ?? null,
     price: decimalAuditValue(product.price),
     active: product.active,
@@ -270,9 +274,9 @@ function normalizeProduct(product: any) {
     const ingredientBaseReference =
       referenceQuantity > 0
         ? convertToBaseUnit(
-            referenceQuantity,
-            ingredient?.stockUnit ?? item.unit,
-          )
+          referenceQuantity,
+          ingredient?.stockUnit ?? item.unit,
+        )
         : 0;
 
     const recipeBaseQuantity = convertToBaseUnit(
@@ -291,33 +295,33 @@ function normalizeProduct(product: any) {
       computedCost,
       ingredientProduct: ingredient
         ? {
-            ...ingredient,
-            price: Number(ingredient.price),
-            simpleCost:
-              ingredient.simpleCost == null
-                ? null
-                : Number(ingredient.simpleCost),
-            referenceQuantity:
-              ingredient.referenceQuantity == null
-                ? null
-                : Number(ingredient.referenceQuantity),
-            referenceCost:
-              ingredient.referenceCost == null
-                ? null
-                : Number(ingredient.referenceCost),
-            unitContentQuantity:
-              ingredient.unitContentQuantity == null
-                ? null
-                : Number(ingredient.unitContentQuantity),
-            unitContentUnit: ingredient.unitContentUnit ?? null,
-            recipeOutputQuantity:
-              ingredient.recipeOutputQuantity == null
-                ? null
-                : Number(ingredient.recipeOutputQuantity),
-            recipeOutputUnit: ingredient.recipeOutputUnit ?? null,
-            madeOnDemand: Boolean(ingredient.madeOnDemand),
-            unlimitedStock: Boolean(ingredient.unlimitedStock),
-          }
+          ...ingredient,
+          price: Number(ingredient.price),
+          simpleCost:
+            ingredient.simpleCost == null
+              ? null
+              : Number(ingredient.simpleCost),
+          referenceQuantity:
+            ingredient.referenceQuantity == null
+              ? null
+              : Number(ingredient.referenceQuantity),
+          referenceCost:
+            ingredient.referenceCost == null
+              ? null
+              : Number(ingredient.referenceCost),
+          unitContentQuantity:
+            ingredient.unitContentQuantity == null
+              ? null
+              : Number(ingredient.unitContentQuantity),
+          unitContentUnit: ingredient.unitContentUnit ?? null,
+          recipeOutputQuantity:
+            ingredient.recipeOutputQuantity == null
+              ? null
+              : Number(ingredient.recipeOutputQuantity),
+          recipeOutputUnit: ingredient.recipeOutputUnit ?? null,
+          madeOnDemand: Boolean(ingredient.madeOnDemand),
+          unlimitedStock: Boolean(ingredient.unlimitedStock),
+        }
         : null,
     };
   });
@@ -371,9 +375,9 @@ function normalizeProduct(product: any) {
               const ingredientBaseReference =
                 referenceQuantity > 0
                   ? convertToBaseUnit(
-                      referenceQuantity,
-                      ingredient?.stockUnit ?? item.unit,
-                    )
+                    referenceQuantity,
+                    ingredient?.stockUnit ?? item.unit,
+                  )
                   : 0;
 
               const recipeBaseQuantity = convertToBaseUnit(
@@ -384,7 +388,7 @@ function normalizeProduct(product: any) {
               const computedCost =
                 ingredientBaseReference > 0
                   ? (referenceCost / ingredientBaseReference) *
-                    recipeBaseQuantity
+                  recipeBaseQuantity
                   : 0;
 
               return {
@@ -393,26 +397,26 @@ function normalizeProduct(product: any) {
                 computedCost,
                 ingredientProduct: ingredient
                   ? {
-                      ...ingredient,
-                      price: Number(ingredient.price),
-                      simpleCost:
-                        ingredient.simpleCost == null
-                          ? null
-                          : Number(ingredient.simpleCost),
-                      referenceQuantity:
-                        ingredient.referenceQuantity == null
-                          ? null
-                          : Number(ingredient.referenceQuantity),
-                      referenceCost:
-                        ingredient.referenceCost == null
-                          ? null
-                          : Number(ingredient.referenceCost),
-                      unitContentQuantity:
-                        ingredient.unitContentQuantity == null
-                          ? null
-                          : Number(ingredient.unitContentQuantity),
-                      unitContentUnit: ingredient.unitContentUnit ?? null,
-                    }
+                    ...ingredient,
+                    price: Number(ingredient.price),
+                    simpleCost:
+                      ingredient.simpleCost == null
+                        ? null
+                        : Number(ingredient.simpleCost),
+                    referenceQuantity:
+                      ingredient.referenceQuantity == null
+                        ? null
+                        : Number(ingredient.referenceQuantity),
+                    referenceCost:
+                      ingredient.referenceCost == null
+                        ? null
+                        : Number(ingredient.referenceCost),
+                    unitContentQuantity:
+                      ingredient.unitContentQuantity == null
+                        ? null
+                        : Number(ingredient.unitContentQuantity),
+                    unitContentUnit: ingredient.unitContentUnit ?? null,
+                  }
                   : null,
               };
             },
@@ -619,6 +623,7 @@ async function validateRecipeCycle(
 
 const productInclude = {
   category: true,
+  printPort: true,
   environmentPrices: {
     include: {
       salesEnvironment: true,
@@ -803,6 +808,7 @@ export async function createProduct(data: CreateProductInput, userId: string) {
         ? null
         : new Prisma.Decimal(data.recipeOutputQuantity),
     recipeOutputUnit: data.recipeOutputUnit ?? null,
+    printPortId: data.printPortId || null,
     recipeItems: {
       create: (data.recipeItems ?? []).map((item) => ({
         ingredientProductId: item.ingredientProductId,
@@ -971,32 +977,32 @@ async function syncProductVariationGroups(params: {
 
     const matchedExistingGroup = group.id
       ? existingGroups.find(
-          (existingGroup: any) => existingGroup.id === group.id,
-        )
+        (existingGroup: any) => existingGroup.id === group.id,
+      )
       : existingGroups.find(
-          (existingGroup: any) =>
-            normalizeName(existingGroup.name) === normalizeName(cleanGroupName),
-        );
+        (existingGroup: any) =>
+          normalizeName(existingGroup.name) === normalizeName(cleanGroupName),
+      );
 
     const savedGroup = matchedExistingGroup
       ? await tx.productVariationGroup.update({
-          where: { id: matchedExistingGroup.id },
-          data: {
-            name: cleanGroupName,
-            required: group.required ?? false,
-            selectionType: group.selectionType,
-            sortOrder: group.sortOrder ?? groupIndex,
-          },
-        })
+        where: { id: matchedExistingGroup.id },
+        data: {
+          name: cleanGroupName,
+          required: group.required ?? false,
+          selectionType: group.selectionType,
+          sortOrder: group.sortOrder ?? groupIndex,
+        },
+      })
       : await tx.productVariationGroup.create({
-          data: {
-            productId,
-            name: cleanGroupName,
-            required: group.required ?? false,
-            selectionType: group.selectionType,
-            sortOrder: group.sortOrder ?? groupIndex,
-          },
-        });
+        data: {
+          productId,
+          name: cleanGroupName,
+          required: group.required ?? false,
+          selectionType: group.selectionType,
+          sortOrder: group.sortOrder ?? groupIndex,
+        },
+      });
 
     const incomingOptions = group.options ?? [];
 
@@ -1037,13 +1043,13 @@ async function syncProductVariationGroups(params: {
 
       const matchedExistingOption = option.id
         ? existingOptions.find(
-            (existingOption: any) => existingOption.id === option.id,
-          )
+          (existingOption: any) => existingOption.id === option.id,
+        )
         : existingOptions.find(
-            (existingOption: any) =>
-              normalizeName(existingOption.name) ===
-              normalizeName(cleanOptionName),
-          );
+          (existingOption: any) =>
+            normalizeName(existingOption.name) ===
+            normalizeName(cleanOptionName),
+        );
 
       if (matchedExistingOption) {
         await tx.productVariationOption.update({
@@ -1079,10 +1085,10 @@ async function syncProductVariationGroups(params: {
               create:
                 (option.costMode ?? "simple") === "recipe"
                   ? (option.recipeItems ?? []).map((item) => ({
-                      ingredientProductId: item.ingredientProductId,
-                      quantity: new Prisma.Decimal(item.quantity),
-                      unit: item.unit,
-                    }))
+                    ingredientProductId: item.ingredientProductId,
+                    quantity: new Prisma.Decimal(item.quantity),
+                    unit: item.unit,
+                  }))
                   : [],
             },
           },
@@ -1119,10 +1125,10 @@ async function syncProductVariationGroups(params: {
               create:
                 (option.costMode ?? "simple") === "recipe"
                   ? (option.recipeItems ?? []).map((item) => ({
-                      ingredientProductId: item.ingredientProductId,
-                      quantity: new Prisma.Decimal(item.quantity),
-                      unit: item.unit,
-                    }))
+                    ingredientProductId: item.ingredientProductId,
+                    quantity: new Prisma.Decimal(item.quantity),
+                    unit: item.unit,
+                  }))
                   : [],
             },
           },
@@ -1275,37 +1281,39 @@ export async function updateProduct(
           data.recipeOutputUnit === undefined
             ? existingProduct.recipeOutputUnit
             : data.recipeOutputUnit,
-        updatedByUser: {
-          connect: {
-            id: userId,
-          },
-        },
+        ...(data.printPortId !== undefined
+          ? {
+            printPort: data.printPortId
+              ? { connect: { id: data.printPortId } }
+              : { disconnect: true },
+          }
+          : {}),
 
         ...(data.recipeItems
           ? {
-              recipeItems: {
-                create: data.recipeItems.map((item) => ({
-                  ingredientProductId: item.ingredientProductId,
-                  quantity: new Prisma.Decimal(item.quantity),
-                  unit: item.unit,
-                })),
-              },
-            }
+            recipeItems: {
+              create: data.recipeItems.map((item) => ({
+                ingredientProductId: item.ingredientProductId,
+                quantity: new Prisma.Decimal(item.quantity),
+                unit: item.unit,
+              })),
+            },
+          }
           : {}),
 
         ...(data.environmentPrices || data.isStockOnly !== undefined
           ? {
-              environmentPrices: {
-                deleteMany: {},
-                create: ((data.isStockOnly ?? existingProduct.isStockOnly)
-                  ? []
-                  : (data.environmentPrices ?? [])
-                ).map((item) => ({
-                  salesEnvironmentId: item.salesEnvironmentId,
-                  price: new Prisma.Decimal(item.price),
-                })),
-              },
-            }
+            environmentPrices: {
+              deleteMany: {},
+              create: ((data.isStockOnly ?? existingProduct.isStockOnly)
+                ? []
+                : (data.environmentPrices ?? [])
+              ).map((item) => ({
+                salesEnvironmentId: item.salesEnvironmentId,
+                price: new Prisma.Decimal(item.price),
+              })),
+            },
+          }
           : {}),
       },
     });

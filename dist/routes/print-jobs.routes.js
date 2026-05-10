@@ -1,0 +1,12 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const print_jobs_controller_1 = require("../controllers/print-jobs.controller");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const router = (0, express_1.Router)();
+router.post('/', auth_middleware_1.requireAuth, print_jobs_controller_1.createPrintJob);
+router.post('/orders/:orderId', auth_middleware_1.requireAuth, print_jobs_controller_1.createOrderPrintJobs);
+router.get('/terminal/pending', auth_middleware_1.requireAuth, print_jobs_controller_1.listTerminalPendingJobs);
+router.post('/:id/claim', auth_middleware_1.requireAuth, print_jobs_controller_1.claimPrintJob);
+router.patch('/:id/status', auth_middleware_1.requireAuth, print_jobs_controller_1.updatePrintJobStatus);
+exports.default = router;

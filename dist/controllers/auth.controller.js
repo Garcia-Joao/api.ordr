@@ -58,6 +58,7 @@ async function login(req, res) {
         res.cookie(COOKIE_NAME, result.token, COOKIE_OPTIONS);
         return res.json({
             user: result.user,
+            token: result.token,
         });
     }
     catch (error) {
@@ -109,6 +110,7 @@ async function switchCompany(req, res) {
         });
         return res.json({
             user: result.user,
+            token: result.token,
         });
     }
     catch (error) {

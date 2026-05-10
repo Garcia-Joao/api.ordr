@@ -80,7 +80,7 @@ async function heartbeat(req, res) {
             clientType: getStringValue(req.body?.clientType),
             isPrintTerminal: Boolean(req.body?.isPrintTerminal),
             printTerminalEnabled: Boolean(req.body?.printTerminalEnabled),
-            localPrinters: Array.isArray(req.body?.localPrinters) ? req.body.localPrinters : null,
+            localPrinters: Array.isArray(req.body?.localPrinters) ? req.body.localPrinters : [],
         });
         return res.json({ device: result });
     }
