@@ -39,6 +39,7 @@ exports.listPrintPorts = listPrintPorts;
 exports.createPrintPort = createPrintPort;
 exports.updatePrintPort = updatePrintPort;
 exports.bindPrintPort = bindPrintPort;
+exports.setPrintPortBindings = setPrintPortBindings;
 exports.deletePrintPort = deletePrintPort;
 exports.getPrinterSettings = getPrinterSettings;
 exports.savePrinterSettings = savePrinterSettings;
@@ -136,6 +137,27 @@ async function bindPrintPort(req, res) {
         if (error?.message === 'PRINT_TERMINAL_NOT_FOUND')
             return res.status(400).json({ error: 'Terminal de impressão inválido ou offline.' });
         return res.status(500).json({ error: error?.message || 'Failed to bind print port' });
+    }
+}
+async function setPrintPortBindings(req, res) {
+    try {
+        const companyId = req.user?.companyId;
+        const portId = getParam(req.params.id);
+        if (!companyId)
+            return res.status(401).json({ error: 'Unauthorized' });
+        const port = await printersService.setPrintPortBindings(companyId, portId, {
+            terminalDeviceId: typeof req.body?.terminalDeviceId === 'string' ? req.body.terminalDeviceId : null,
+            printers: Array.isArray(req.body?.printers) ? req.body.printers : [],
+        });
+        return res.json({ port });
+    }
+    catch (error) {
+        console.error('setPrintPortBindings error:', error);
+        if (error?.message === 'PRINT_PORT_NOT_FOUND')
+            return res.status(404).json({ error: 'Port não encontrada.' });
+        if (error?.message === 'PRINT_TERMINAL_NOT_FOUND')
+            return res.status(400).json({ error: 'Terminal de impressão inválido ou offline.' });
+        return res.status(500).json({ error: error?.message || 'Failed to bind print port printers' });
     }
 }
 async function deletePrintPort(req, res) {

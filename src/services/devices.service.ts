@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma'
 
-const ONLINE_THRESHOLD_MS = 2 * 60 * 1000
+const ONLINE_THRESHOLD_MS = 45 * 1000
 
 type DeviceType = 'DESKTOP' | 'MOBILE' | 'TABLET' | 'UNKNOWN'
 type DeviceClientType = 'WEB' | 'ELECTRON'
@@ -213,4 +213,42 @@ export async function deleteCompanyDevice(params: {
   await prisma.device.delete({ where: { id: device.id } })
 
   return { ok: true }
+}
+
+
+export async function disconnectTerminalDevice(input: {
+  companyId: string
+  userId: string
+  deviceId: string
+}) {
+  const device = await prisma.device.findFirst({
+    where: {
+      id: input.deviceId,
+      companyId: input.companyId,
+    },
+    select: { id: true },
+  })
+
+  if (!device) {
+    throw new Error('DEVICE_NOT_FOUND')
+  }
+
+  return prisma.device.update({
+    where: { id: input.deviceId },
+    data: {
+      printTerminalEnabled: false,
+      isPrintTerminal: false,
+      currentUserId: null,
+      lastSeenAt: new Date(0),
+    },
+    include: {
+      currentUser: {
+        select: {
+          id: true,
+          username: true,
+          name: true,
+        },
+      },
+    },
+  })
 }

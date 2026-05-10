@@ -175,7 +175,9 @@ async function loginTerminalWithLaunchToken(launchToken) {
         if (!membership)
             throw new Error('INVALID_TERMINAL_TOKEN');
         const token = jsonwebtoken_1.default.sign({
-            id: user.id,
+            sub: user.id,
+            username: user.username,
+            role: String(user.role),
             companyId: decoded.companyId,
         }, JWT_SECRET, { expiresIn: '30d' });
         return {

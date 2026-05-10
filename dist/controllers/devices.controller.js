@@ -35,6 +35,7 @@ var __importStar = (this && this.__importStar) || (function () {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.heartbeat = heartbeat;
 exports.listDevices = listDevices;
+exports.disconnectTerminal = disconnectTerminal;
 exports.deleteDevice = deleteDevice;
 const devicesService = __importStar(require("../services/devices.service"));
 function getIpAddress(req) {
@@ -104,6 +105,34 @@ async function listDevices(req, res) {
         console.error('list devices error:', error);
         return res.status(500).json({
             error: error?.message || 'Failed to list devices',
+        });
+    }
+}
+async function disconnectTerminal(req, res) {
+    try {
+        const companyId = req.user?.companyId;
+        const userId = req.user?.id;
+        if (!companyId || !userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        const deviceId = getStringValue(req.body?.deviceId);
+        if (!deviceId) {
+            return res.status(400).json({ error: 'deviceId é obrigatório.' });
+        }
+        const device = await devicesService.disconnectTerminalDevice({
+            companyId,
+            userId,
+            deviceId,
+        });
+        return res.json({ device });
+    }
+    catch (error) {
+        console.error('disconnect terminal error:', error);
+        if (error?.message === 'DEVICE_NOT_FOUND') {
+            return res.status(404).json({ error: 'Dispositivo não encontrado.' });
+        }
+        return res.status(500).json({
+            error: error?.message || 'Erro ao desconectar terminal.',
         });
     }
 }

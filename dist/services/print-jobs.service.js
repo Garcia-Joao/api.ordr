@@ -36,6 +36,13 @@ function normalizeJob(job) {
                 localPrinterLabel: job.port.localPrinterLabel,
                 paperWidth: job.port.paperWidth,
                 terminalDeviceId: job.port.terminalDeviceId,
+                bindings: (job.port.bindings ?? []).map((binding) => ({
+                    id: binding.id,
+                    portId: binding.portId,
+                    terminalDeviceId: binding.terminalDeviceId,
+                    localPrinterName: binding.localPrinterName,
+                    localPrinterLabel: binding.localPrinterLabel ?? binding.localPrinterName,
+                })),
             }
             : null,
         order: job.order ? { id: job.order.id, comanda: job.order.comanda, comandaName: job.order.comandaName } : null,
@@ -46,15 +53,15 @@ async function getPortForJob(companyId, portId) {
         return null;
     const port = await prisma_1.prisma.printPort.findFirst({
         where: { id: portId, companyId, active: true },
-        include: { terminalDevice: true },
+        include: { terminalDevice: true, bindings: { include: { terminalDevice: true } } },
     });
     if (!port)
         throw new Error('PRINT_PORT_NOT_FOUND');
-    if (!port.terminalDeviceId || !port.localPrinterName)
+    const hasAvailableBinding = (port.bindings ?? []).some((binding) => binding.terminalDevice?.printTerminalEnabled &&
+        binding.terminalDevice?.clientType === 'ELECTRON' &&
+        isTerminalOnline(binding.terminalDevice));
+    if (!hasAvailableBinding)
         throw new Error('PRINT_PORT_NOT_BOUND');
-    if (!port.terminalDevice?.printTerminalEnabled || port.terminalDevice.clientType !== 'ELECTRON') {
-        throw new Error('PRINT_TERMINAL_NOT_AVAILABLE');
-    }
     return port;
 }
 async function createPrintJob(input) {
@@ -64,11 +71,11 @@ async function createPrintJob(input) {
             companyId: input.companyId,
             orderId: input.orderId || null,
             portId: port?.id ?? input.portId ?? null,
-            terminalDeviceId: port?.terminalDeviceId ?? null,
+            terminalDeviceId: (port?.bindings ?? [])[0]?.terminalDeviceId ?? port?.terminalDeviceId ?? null,
             type: input.type ?? 'ORDER_TICKET',
             payload: input.payload,
         },
-        include: { port: true, order: true },
+        include: { port: { include: { bindings: true } }, order: true },
     });
     return normalizeJob(job);
 }
@@ -110,7 +117,7 @@ async function createOrderPrintJobs(companyId, orderId) {
     const defaultPort = await prisma_1.prisma.printPort.findFirst({
         where: { companyId, active: true },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-        include: { terminalDevice: true },
+        include: { bindings: { include: { terminalDevice: true } } },
     });
     const portIds = new Set();
     const itemsByPort = new Map();
@@ -123,13 +130,16 @@ async function createOrderPrintJobs(companyId, orderId) {
     }
     const ports = await prisma_1.prisma.printPort.findMany({
         where: { id: { in: Array.from(portIds).filter((id) => id !== 'unassigned') }, companyId, active: true },
-        include: { terminalDevice: true },
+        include: { bindings: { include: { terminalDevice: true } } },
     });
     const portsById = new Map(ports.map((port) => [port.id, port]));
     const jobs = [];
     for (const [portId, items] of itemsByPort.entries()) {
         const port = portsById.get(portId) ?? null;
-        if (!port || !port.terminalDeviceId || !port.localPrinterName) {
+        const bindings = (port?.bindings ?? []).filter((binding) => binding.terminalDevice?.printTerminalEnabled &&
+            binding.terminalDevice?.clientType === 'ELECTRON' &&
+            isTerminalOnline(binding.terminalDevice));
+        if (!port || bindings.length === 0) {
             jobs.push(await prisma_1.prisma.printJob.create({
                 data: {
                     companyId,
@@ -140,22 +150,25 @@ async function createOrderPrintJobs(companyId, orderId) {
                     errorMessage: port ? 'PRINT_PORT_NOT_BOUND' : 'PRINT_PORT_NOT_FOUND',
                     payload: buildOrderPayload(order, port, items),
                 },
-                include: { port: true, order: true },
+                include: { port: { include: { bindings: true } }, order: true },
             }));
             continue;
         }
-        jobs.push(await prisma_1.prisma.printJob.create({
-            data: {
-                companyId,
-                orderId: order.id,
-                portId: port.id,
-                terminalDeviceId: port.terminalDeviceId,
-                status: isTerminalOnline(port.terminalDevice) ? 'PENDING' : 'FAILED',
-                errorMessage: isTerminalOnline(port.terminalDevice) ? null : 'PRINT_TERMINAL_OFFLINE',
-                payload: buildOrderPayload(order, port, items),
-            },
-            include: { port: true, order: true },
-        }));
+        const uniqueTerminalIds = Array.from(new Set(bindings.map((binding) => binding.terminalDeviceId)));
+        for (const terminalDeviceId of uniqueTerminalIds) {
+            jobs.push(await prisma_1.prisma.printJob.create({
+                data: {
+                    companyId,
+                    orderId: order.id,
+                    portId: port.id,
+                    terminalDeviceId,
+                    status: 'PENDING',
+                    errorMessage: null,
+                    payload: buildOrderPayload(order, port, items),
+                },
+                include: { port: { include: { bindings: true } }, order: true },
+            }));
+        }
     }
     return jobs.map(normalizeJob);
 }
@@ -178,7 +191,7 @@ async function listTerminalPendingJobs(companyId, terminalDeviceId) {
             terminalDeviceId,
             status: { in: ['PENDING', 'CLAIMED'] },
         },
-        include: { port: true, order: true },
+        include: { port: { include: { bindings: true } }, order: true },
         orderBy: { createdAt: 'asc' },
         take: 20,
     });
@@ -193,7 +206,7 @@ async function claimPrintJob(companyId, terminalDeviceId, jobId) {
     const updated = await prisma_1.prisma.printJob.update({
         where: { id: jobId },
         data: { status: 'CLAIMED', claimedAt: new Date(), attempts: { increment: 1 } },
-        include: { port: true, order: true },
+        include: { port: { include: { bindings: true } }, order: true },
     });
     return normalizeJob(updated);
 }
@@ -211,7 +224,7 @@ async function updatePrintJobStatus(companyId, terminalDeviceId, jobId, status, 
             ...(status === 'PRINTED' ? { printedAt: now } : {}),
             ...(status === 'FAILED' ? { failedAt: now } : {}),
         },
-        include: { port: true, order: true },
+        include: { port: { include: { bindings: true } }, order: true },
     });
     return normalizeJob(updated);
 }

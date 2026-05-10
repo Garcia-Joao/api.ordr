@@ -3,8 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.heartbeatDevice = heartbeatDevice;
 exports.listCompanyDevices = listCompanyDevices;
 exports.deleteCompanyDevice = deleteCompanyDevice;
+exports.disconnectTerminalDevice = disconnectTerminalDevice;
 const prisma_1 = require("../lib/prisma");
-const ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
+const ONLINE_THRESHOLD_MS = 45 * 1000;
 function normalizeDeviceType(value) {
     const normalized = String(value ?? '').toUpperCase();
     if (normalized === 'DESKTOP')
@@ -173,4 +174,34 @@ async function deleteCompanyDevice(params) {
     }
     await prisma_1.prisma.device.delete({ where: { id: device.id } });
     return { ok: true };
+}
+async function disconnectTerminalDevice(input) {
+    const device = await prisma_1.prisma.device.findFirst({
+        where: {
+            id: input.deviceId,
+            companyId: input.companyId,
+        },
+        select: { id: true },
+    });
+    if (!device) {
+        throw new Error('DEVICE_NOT_FOUND');
+    }
+    return prisma_1.prisma.device.update({
+        where: { id: input.deviceId },
+        data: {
+            printTerminalEnabled: false,
+            isPrintTerminal: false,
+            currentUserId: null,
+            lastSeenAt: new Date(0),
+        },
+        include: {
+            currentUser: {
+                select: {
+                    id: true,
+                    username: true,
+                    name: true,
+                },
+            },
+        },
+    });
 }

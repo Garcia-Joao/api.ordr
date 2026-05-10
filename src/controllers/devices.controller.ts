@@ -94,6 +94,42 @@ export async function listDevices(req: AuthRequest, res: Response) {
   }
 }
 
+
+export async function disconnectTerminal(req: AuthRequest, res: Response) {
+  try {
+    const companyId = req.user?.companyId
+    const userId = req.user?.id
+
+    if (!companyId || !userId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const deviceId = getStringValue(req.body?.deviceId)
+
+    if (!deviceId) {
+      return res.status(400).json({ error: 'deviceId é obrigatório.' })
+    }
+
+    const device = await devicesService.disconnectTerminalDevice({
+      companyId,
+      userId,
+      deviceId,
+    })
+
+    return res.json({ device })
+  } catch (error: any) {
+    console.error('disconnect terminal error:', error)
+
+    if (error?.message === 'DEVICE_NOT_FOUND') {
+      return res.status(404).json({ error: 'Dispositivo não encontrado.' })
+    }
+
+    return res.status(500).json({
+      error: error?.message || 'Erro ao desconectar terminal.',
+    })
+  }
+}
+
 export async function deleteDevice(req: AuthRequest, res: Response) {
   try {
     const companyId = req.user?.companyId

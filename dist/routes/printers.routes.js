@@ -14,5 +14,6 @@ router.get('/ports', auth_middleware_1.requireAuth, (0, require_permission_middl
 router.post('/ports', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.update'), printers_controller_1.createPrintPort);
 router.put('/ports/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.update'), printers_controller_1.updatePrintPort);
 router.patch('/ports/:id/binding', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.update'), printers_controller_1.bindPrintPort);
+router.patch('/ports/:id/bindings', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.update'), printers_controller_1.setPrintPortBindings);
 router.delete('/ports/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('printers.update'), printers_controller_1.deletePrintPort);
 exports.default = router;
