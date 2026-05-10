@@ -4,7 +4,7 @@ import { prisma } from '../lib/prisma'
 import { createOrderPrintJobs } from './print-jobs.service'
 import { createAuditLog } from './audit.service'
 
-type OrderPrintMode = 'SEPARATE_ITEMS' | 'GROUPED'
+type PrintItemMode = 'SEPARATE' | 'GROUPED'
 
 type CreateOrderVariationOptionInput = {
   optionId: string
@@ -22,6 +22,7 @@ type CreateOrderItemInput = {
   unitPrice: Prisma.Decimal | number | string
   totalPrice: Prisma.Decimal | number | string
   notes?: string | null
+  printMode?: PrintItemMode
   variations?: CreateOrderVariationSelectionInput[]
 }
 
@@ -41,7 +42,6 @@ type CreateOrderInput = {
   paymentMethod?: PaymentMethod | null
   taxApplied: boolean
   deviceId?: string | null
-  printMode?: OrderPrintMode
   orderItems: CreateOrderItemInput[]
 }
 
@@ -696,6 +696,25 @@ export async function paySelectedInternalCustomerOrders(
   return { ok: true, paidCount: pendingOrders.length }
 }
 
+
+function getInputOrderItemPrintKey(item: CreateOrderItemInput) {
+  const optionIds = (item.variations ?? [])
+    .flatMap((variation) => variation.options?.map((option) => option.optionId) ?? [])
+    .sort()
+
+  return `${item.productId}-${JSON.stringify(optionIds)}`
+}
+
+function buildInputItemPrintModes(items: CreateOrderItemInput[]) {
+  const modes = new Map<string, PrintItemMode>()
+
+  for (const item of items) {
+    modes.set(getInputOrderItemPrintKey(item), item.printMode ?? 'SEPARATE')
+  }
+
+  return modes
+}
+
 export async function createOrder(data: CreateOrderInput, userId: string) {
   if (!data.companyId?.trim()) {
     throw new Error('ORDER_COMPANY_ID_REQUIRED')
@@ -932,7 +951,7 @@ const order = await prisma.$transaction(async (tx: any) => {
 
   try {
     printJobs = await createOrderPrintJobs(order.companyId, order.id, {
-      printMode: data.printMode ?? 'SEPARATE_ITEMS',
+      itemPrintModes: buildInputItemPrintModes(data.orderItems),
     })
 
     console.log('[ORDER PRINT JOBS] Created successfully', {
