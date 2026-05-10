@@ -9,4 +9,6 @@ router.post('/logout', auth_controller_1.logout);
 router.get('/me', auth_middleware_1.requireAuth, auth_controller_1.me);
 router.patch('/me', auth_middleware_1.requireAuth, auth_controller_1.updateMe);
 router.post('/switch-company', auth_middleware_1.requireAuth, auth_controller_1.switchCompany);
+router.post('/terminal-launch-token', auth_middleware_1.requireAuth, auth_controller_1.createTerminalLaunchToken);
+router.post('/terminal-login', auth_controller_1.terminalLogin);
 exports.default = router;

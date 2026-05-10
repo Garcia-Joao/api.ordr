@@ -37,6 +37,8 @@ exports.login = login;
 exports.logout = logout;
 exports.me = me;
 exports.switchCompany = switchCompany;
+exports.createTerminalLaunchToken = createTerminalLaunchToken;
+exports.terminalLogin = terminalLogin;
 exports.updateMe = updateMe;
 const authService = __importStar(require("../services/auth.service"));
 const COOKIE_OPTIONS = {
@@ -125,6 +127,41 @@ async function switchCompany(req, res) {
         }
         console.error(error);
         return res.status(500).json({ error: error?.message || 'Failed to switch company' });
+    }
+}
+async function createTerminalLaunchToken(req, res) {
+    try {
+        const userId = req.user?.id;
+        const companyId = req.user?.companyId;
+        if (!userId || !companyId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+        const token = authService.createTerminalLaunchToken({
+            userId,
+            companyId,
+        });
+        return res.json({ launchToken: token });
+    }
+    catch (error) {
+        return res.status(500).json({ error: error?.message || 'Erro ao gerar token do terminal.' });
+    }
+}
+async function terminalLogin(req, res) {
+    try {
+        const launchToken = typeof req.body?.launchToken === 'string'
+            ? req.body.launchToken
+            : null;
+        if (!launchToken) {
+            return res.status(400).json({ error: 'launchToken é obrigatório.' });
+        }
+        const result = await authService.loginTerminalWithLaunchToken(launchToken);
+        return res.json(result);
+    }
+    catch (error) {
+        if (error?.message === 'INVALID_TERMINAL_TOKEN') {
+            return res.status(401).json({ error: 'Token do terminal inválido ou expirado.' });
+        }
+        return res.status(500).json({ error: error?.message || 'Erro ao conectar terminal.' });
     }
 }
 async function updateMe(req, res) {

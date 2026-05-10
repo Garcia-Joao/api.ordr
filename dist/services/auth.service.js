@@ -3,6 +3,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.createTerminalLaunchToken = createTerminalLaunchToken;
+exports.loginTerminalWithLaunchToken = loginTerminalWithLaunchToken;
 exports.loginUser = loginUser;
 exports.getUserFromToken = getUserFromToken;
 exports.switchUserCompany = switchUserCompany;
@@ -12,7 +14,7 @@ const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prisma_1 = require("../lib/prisma");
 const permissions_1 = require("../auth/permissions");
-const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-this';
+const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 function getDaysRemaining(endsAt) {
     if (!endsAt)
         return null;
@@ -141,6 +143,67 @@ const userMembershipInclude = {
     },
     customRole: { include: { permissions: true } },
 };
+function createTerminalLaunchToken(input) {
+    return jsonwebtoken_1.default.sign({
+        sub: input.userId,
+        companyId: input.companyId,
+        purpose: 'terminal-launch',
+    }, JWT_SECRET, { expiresIn: '2m' });
+}
+async function loginTerminalWithLaunchToken(launchToken) {
+    try {
+        const decoded = jsonwebtoken_1.default.verify(launchToken, JWT_SECRET);
+        if (decoded.purpose !== 'terminal-launch') {
+            throw new Error('INVALID_TERMINAL_TOKEN');
+        }
+        const user = await prisma_1.prisma.user.findUnique({
+            where: { id: decoded.sub },
+            include: {
+                memberships: {
+                    where: {
+                        companyId: decoded.companyId,
+                    },
+                    include: {
+                        company: true,
+                    },
+                },
+            },
+        });
+        if (!user)
+            throw new Error('INVALID_TERMINAL_TOKEN');
+        const membership = user.memberships[0];
+        if (!membership)
+            throw new Error('INVALID_TERMINAL_TOKEN');
+        const token = jsonwebtoken_1.default.sign({
+            id: user.id,
+            companyId: decoded.companyId,
+        }, JWT_SECRET, { expiresIn: '30d' });
+        return {
+            token,
+            user: {
+                id: user.id,
+                username: user.username,
+                name: user.name,
+                companyId: decoded.companyId,
+                currentCompany: {
+                    id: membership.company.id,
+                    name: membership.company.name,
+                    isTest: membership.company.isTest,
+                    systemRole: membership.systemRole,
+                },
+                companies: user.memberships.map((item) => ({
+                    id: item.company.id,
+                    name: item.company.name,
+                    isTest: item.company.isTest,
+                    systemRole: item.systemRole,
+                })),
+            },
+        };
+    }
+    catch {
+        throw new Error('INVALID_TERMINAL_TOKEN');
+    }
+}
 async function loginUser(username, password) {
     const user = await prisma_1.prisma.user.findUnique({
         where: { username },

@@ -106,8 +106,9 @@ model Company {
 
   platformLicenses CompanyLicense[]
   devices          Device[]
-  printPorts       PrintPort[]
-  printJobs        PrintJob[]
+  printPorts        PrintPort[]
+  printJobs         PrintJob[]
+  printPortBindings PrintPortBinding[]
 }
 
 model User {
@@ -1053,6 +1054,7 @@ model Device {
   orders             Order[]
   boundPrintPorts    PrintPort[] @relation("DevicePrintPortBindings")
   printJobs          PrintJob[]
+  printPortBindings  PrintPortBinding[]
 
   @@index([companyId])
   @@index([currentUserId])
@@ -1082,12 +1084,33 @@ model PrintPort {
   categories     Category[] @relation("CategoryPrintPort")
   products       Product[]  @relation("ProductPrintPort")
   printJobs      PrintJob[]
+  bindings       PrintPortBinding[]
 
   @@unique([companyId, name])
   @@index([companyId])
   @@index([terminalDeviceId])
   @@index([active])
   @@index([sortOrder])
+}
+
+model PrintPortBinding {
+  id                String   @id @default(cuid())
+  companyId         String
+  portId            String
+  terminalDeviceId  String
+  localPrinterName  String
+  localPrinterLabel String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  company        Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  port           PrintPort @relation(fields: [portId], references: [id], onDelete: Cascade)
+  terminalDevice Device    @relation(fields: [terminalDeviceId], references: [id], onDelete: Cascade)
+
+  @@unique([portId, terminalDeviceId, localPrinterName])
+  @@index([companyId])
+  @@index([portId])
+  @@index([terminalDeviceId])
 }
 
 model PrintJob {

@@ -96,6 +96,26 @@ export async function bindPrintPort(req: AuthRequest, res: Response) {
   }
 }
 
+export async function setPrintPortBindings(req: AuthRequest, res: Response) {
+  try {
+    const companyId = req.user?.companyId
+    const portId = getParam(req.params.id)
+    if (!companyId) return res.status(401).json({ error: 'Unauthorized' })
+
+    const port = await printersService.setPrintPortBindings(companyId, portId, {
+      terminalDeviceId: typeof req.body?.terminalDeviceId === 'string' ? req.body.terminalDeviceId : null,
+      printers: Array.isArray(req.body?.printers) ? req.body.printers : [],
+    })
+
+    return res.json({ port })
+  } catch (error: any) {
+    console.error('setPrintPortBindings error:', error)
+    if (error?.message === 'PRINT_PORT_NOT_FOUND') return res.status(404).json({ error: 'Port não encontrada.' })
+    if (error?.message === 'PRINT_TERMINAL_NOT_FOUND') return res.status(400).json({ error: 'Terminal de impressão inválido ou offline.' })
+    return res.status(500).json({ error: error?.message || 'Failed to bind print port printers' })
+  }
+}
+
 export async function deletePrintPort(req: AuthRequest, res: Response) {
   try {
     const companyId = req.user?.companyId

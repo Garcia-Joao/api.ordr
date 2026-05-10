@@ -8,6 +8,7 @@ import {
   getSystemPrinters,
   listPrintPorts,
   savePrinterSettings,
+  setPrintPortBindings,
   testPrinter,
   updatePrintPort,
 } from '../controllers/printers.controller'
@@ -26,6 +27,7 @@ router.get('/ports', requireAuth, requirePermission('printers.view'), listPrintP
 router.post('/ports', requireAuth, requirePermission('printers.update'), createPrintPort)
 router.put('/ports/:id', requireAuth, requirePermission('printers.update'), updatePrintPort)
 router.patch('/ports/:id/binding', requireAuth, requirePermission('printers.update'), bindPrintPort)
+router.patch('/ports/:id/bindings', requireAuth, requirePermission('printers.update'), setPrintPortBindings)
 router.delete('/ports/:id', requireAuth, requirePermission('printers.update'), deletePrintPort)
 
 export default router
