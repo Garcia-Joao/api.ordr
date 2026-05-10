@@ -14,6 +14,7 @@ import {
   adminMeController,
   adminUpdateCompanyAccessController,
   adminUpdateCompanyController,
+  adminUpdateCompanyLicenseController,
   adminUpdateCompanyMembershipController,
   adminUpdateLicensePlanController,
   adminUpsertCompanyMembershipController,
@@ -46,6 +47,11 @@ adminRouter.post(
   '/companies/:companyId/license',
   requirePlatformAdmin,
   adminAssignCompanyLicenseController
+)
+adminRouter.patch(
+  '/company-licenses/:licenseId',
+  requirePlatformAdmin,
+  adminUpdateCompanyLicenseController
 )
 
 adminRouter.post('/company-memberships', requirePlatformAdmin, adminUpsertCompanyMembershipController)

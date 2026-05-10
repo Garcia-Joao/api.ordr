@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
-import { Prisma } from '@prisma/client'
+import { CompanyLicenseStatus, Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 
 const ADMIN_COOKIE_NAME = 'admin_auth'
@@ -48,6 +48,7 @@ type CreateCompanyInput = {
   ownerPhone?: string | null
   licensePlanId?: string | null
   licenseNotes?: string | null
+  licenseStartsAt?: string | Date | null
   adminId?: string
 }
 
@@ -76,8 +77,17 @@ type UpdateCompanyMembershipInput = Partial<Omit<CompanyMembershipInput, 'compan
 type AssignCompanyLicenseInput = {
   companyId: string
   planId: string
+  startsAt?: string | Date | null
   notes?: string | null
   adminId?: string
+}
+
+type UpdateCompanyLicenseInput = {
+  planId?: string
+  status?: CompanyLicenseStatus
+  startsAt?: string | Date | null
+  endsAt?: string | Date | null
+  notes?: string | null
 }
 
 function getAdminJwtSecret() {
@@ -106,8 +116,36 @@ function addMonths(date: Date, months: number) {
   return result
 }
 
-function buildLicenseDates(plan: { durationMonths: number | null; isLifetime: boolean }) {
-  const startsAt = new Date()
+function parseDateInput(value: string | Date | null | undefined, fallback: Date) {
+  if (!value) return fallback
+
+  const parsed = value instanceof Date ? value : new Date(value)
+
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error('INVALID_LICENSE_DATE')
+  }
+
+  return parsed
+}
+
+function parseOptionalDateInput(value: string | Date | null | undefined) {
+  if (value === undefined) return undefined
+  if (value === null || value === '') return null
+
+  const parsed = value instanceof Date ? value : new Date(value)
+
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error('INVALID_LICENSE_DATE')
+  }
+
+  return parsed
+}
+
+function buildLicenseDates(
+  plan: { durationMonths: number | null; isLifetime: boolean },
+  startsAtInput?: string | Date | null
+) {
+  const startsAt = parseDateInput(startsAtInput, new Date())
 
   if (plan.isLifetime) {
     return {
@@ -883,7 +921,7 @@ export async function createCompanyWithInitialAccess(input: CreateCompanyInput) 
         },
       })
 
-      const { startsAt, endsAt } = buildLicenseDates(plan)
+      const { startsAt, endsAt } = buildLicenseDates(plan, input.licenseStartsAt)
 
       license = await tx.companyLicense.create({
         data: {
@@ -964,7 +1002,7 @@ export async function assignCompanyLicense(input: AssignCompanyLicenseInput) {
     throw new Error('LICENSE_PLAN_INACTIVE')
   }
 
-  const { startsAt, endsAt } = buildLicenseDates(plan)
+  const { startsAt, endsAt } = buildLicenseDates(plan, input.startsAt)
 
   const result = await prisma.$transaction(async (tx) => {
     await tx.companyLicense.updateMany({
@@ -1010,6 +1048,102 @@ export async function assignCompanyLicense(input: AssignCompanyLicenseInput) {
   return {
     ok: true,
     license: result,
+  }
+}
+
+export async function updateCompanyLicense(licenseId: string, input: UpdateCompanyLicenseInput) {
+  const existing = await prisma.companyLicense.findUnique({
+    where: { id: licenseId },
+    include: { plan: true },
+  })
+
+  if (!existing) {
+    throw new Error('LICENSE_NOT_FOUND')
+  }
+
+  const plan = input.planId
+    ? await prisma.licensePlan.findUnique({ where: { id: input.planId } })
+    : existing.plan
+
+  if (!plan) {
+    throw new Error('LICENSE_PLAN_NOT_FOUND')
+  }
+
+  if (!plan.active) {
+    throw new Error('LICENSE_PLAN_INACTIVE')
+  }
+
+  const data: Prisma.CompanyLicenseUpdateInput = {}
+
+  if (input.planId !== undefined) {
+    data.plan = { connect: { id: plan.id } }
+  }
+
+  if (input.status !== undefined) {
+    data.status = input.status
+  }
+
+  const startsAtChanged = input.startsAt !== undefined
+  const endsAtProvided = input.endsAt !== undefined
+
+  if (startsAtChanged) {
+    const startsAt = parseDateInput(input.startsAt, existing.startsAt)
+    data.startsAt = startsAt
+
+    if (!endsAtProvided) {
+      data.endsAt = plan.isLifetime ? null : buildLicenseDates(plan, startsAt).endsAt
+    }
+  } else if (input.planId !== undefined && !endsAtProvided) {
+    data.endsAt = plan.isLifetime ? null : buildLicenseDates(plan, existing.startsAt).endsAt
+  }
+
+  if (endsAtProvided) {
+    data.endsAt = parseOptionalDateInput(input.endsAt)
+  }
+
+  if (input.notes !== undefined) {
+    data.notes = input.notes ?? null
+  }
+
+  const license = await prisma.companyLicense.update({
+    where: { id: licenseId },
+    data,
+    include: {
+      plan: true,
+      company: true,
+      createdByAdmin: {
+        select: {
+          id: true,
+          username: true,
+          name: true,
+        },
+      },
+    },
+  })
+
+  if (license.status === 'ACTIVE') {
+    await prisma.companyLicense.updateMany({
+      where: {
+        companyId: license.companyId,
+        status: 'ACTIVE',
+        id: { not: license.id },
+      },
+      data: { status: 'REPLACED' },
+    })
+
+    await prisma.company.update({
+      where: { id: license.companyId },
+      data: {
+        platformAccessStatus: 'ACTIVE',
+        platformBlockedAt: null,
+        platformBlockedReason: null,
+      },
+    })
+  }
+
+  return {
+    ok: true,
+    license,
   }
 }
 

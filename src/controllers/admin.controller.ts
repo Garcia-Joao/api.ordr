@@ -14,6 +14,7 @@ import {
   loginAdmin,
   updateCompany,
   updateCompanyAccess,
+  updateCompanyLicense,
   updateCompanyMembership,
   updateLicensePlan,
   upsertCompanyMembership,
@@ -303,6 +304,24 @@ export async function adminDeleteCompanyMembershipController(
   }
 }
 
+export async function adminUpdateCompanyLicenseController(
+  req: AdminAuthRequest,
+  res: Response
+) {
+  try {
+    const licenseId = getParam(req.params.licenseId, 'licenseId')
+    const result = await updateCompanyLicense(licenseId, req.body)
+
+    return res.json(result)
+  } catch (error: any) {
+    console.error('[admin] update company license error:', error)
+
+    return res.status(400).json({
+      error: error?.message || 'ADMIN_UPDATE_COMPANY_LICENSE_ERROR',
+    })
+  }
+}
+
 export async function adminUpdateCompanyAccessController(
   req: AdminAuthRequest,
   res: Response
@@ -331,6 +350,7 @@ export async function adminAssignCompanyLicenseController(
     const result = await assignCompanyLicense({
       companyId,
       planId: req.body.planId,
+      startsAt: req.body.startsAt,
       notes: req.body.notes,
       adminId: req.admin?.id,
     })
