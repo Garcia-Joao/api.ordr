@@ -277,7 +277,9 @@ export async function loginTerminalWithLaunchToken(launchToken: string) {
 
     const token = jwt.sign(
       {
-        id: user.id,
+        sub: user.id,
+        username: user.username,
+        role: String(user.role),
         companyId: decoded.companyId,
       },
       JWT_SECRET,
