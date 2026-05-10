@@ -24,24 +24,35 @@ async function createTestCompanyFromCompany({ userId, sourceCompanyId, copyData,
                 },
             },
             memberships: true,
+            testCompanies: true,
         },
     });
     if (!sourceCompany) {
         throw new Error('SOURCE_COMPANY_NOT_FOUND');
     }
-    const existingTestCount = await prisma_1.prisma.company.count({
+    if (sourceCompany.isTest) {
+        throw new Error('SOURCE_COMPANY_IS_ALREADY_TEST');
+    }
+    const existingTestCompany = await prisma_1.prisma.company.findFirst({
         where: {
-            name: {
-                startsWith: `${sourceCompany.name} - Teste`,
-            },
+            testSourceCompanyId: sourceCompany.id,
+            isTest: true,
         },
     });
-    const suffix = existingTestCount === 0 ? '' : ` ${existingTestCount + 1}`;
+    if (existingTestCompany) {
+        return {
+            ok: true,
+            alreadyExists: true,
+            company: existingTestCompany,
+        };
+    }
     const result = await prisma_1.prisma.$transaction(async (tx) => {
         const newCompany = await tx.company.create({
             data: {
-                name: `${sourceCompany.name} - Teste${suffix}`,
+                name: `${sourceCompany.name} - Teste`,
                 isTest: true,
+                testSourceCompanyId: sourceCompany.id,
+                platformAccessStatus: sourceCompany.platformAccessStatus,
             },
         });
         await tx.userCompany.create({
@@ -49,6 +60,7 @@ async function createTestCompanyFromCompany({ userId, sourceCompanyId, copyData,
                 userId,
                 companyId: newCompany.id,
                 role: 'admin',
+                systemRole: 'ADMIN',
             },
         });
         if (!copyData) {
@@ -66,12 +78,19 @@ async function createTestCompanyFromCompany({ userId, sourceCompanyId, copyData,
             });
             categoryIdMap.set(category.id, createdCategory.id);
         }
+        const defaultEnvironment = await tx.salesEnvironment.create({
+            data: {
+                companyId: newCompany.id,
+                name: 'Default',
+                color: '#dd7c12',
+                isDefault: true,
+                active: true,
+            },
+        });
         for (const product of sourceCompany.products) {
-            const mappedCategoryId = product.categoryId
-                ? categoryIdMap.get(product.categoryId)
-                : null;
+            const mappedCategoryId = categoryIdMap.get(product.categoryId);
             if (!mappedCategoryId) {
-                throw new Error('PRODUCT_CATEGORY_NOT_FOUND');
+                throw new Error(`CATEGORY_NOT_MAPPED_FOR_PRODUCT_${product.id}`);
             }
             const createdProduct = await tx.product.create({
                 data: {
@@ -82,6 +101,38 @@ async function createTestCompanyFromCompany({ userId, sourceCompanyId, copyData,
                     emoji: product.emoji,
                     price: new client_1.Prisma.Decimal(product.price),
                     active: product.active,
+                    isStockOnly: product.isStockOnly,
+                    trackStock: product.trackStock,
+                    stockQuantity: product.stockQuantity,
+                    minStock: product.minStock,
+                    unitContentQuantity: product.unitContentQuantity
+                        ? new client_1.Prisma.Decimal(product.unitContentQuantity)
+                        : null,
+                    unitContentUnit: product.unitContentUnit,
+                    costMode: product.costMode,
+                    simpleCost: product.simpleCost
+                        ? new client_1.Prisma.Decimal(product.simpleCost)
+                        : null,
+                    stockUnit: product.stockUnit,
+                    referenceQuantity: product.referenceQuantity
+                        ? new client_1.Prisma.Decimal(product.referenceQuantity)
+                        : null,
+                    referenceCost: product.referenceCost
+                        ? new client_1.Prisma.Decimal(product.referenceCost)
+                        : null,
+                    madeOnDemand: product.madeOnDemand,
+                    unlimitedStock: product.unlimitedStock,
+                    recipeOutputQuantity: product.recipeOutputQuantity
+                        ? new client_1.Prisma.Decimal(product.recipeOutputQuantity)
+                        : null,
+                    recipeOutputUnit: product.recipeOutputUnit,
+                },
+            });
+            await tx.productEnvironmentPrice.create({
+                data: {
+                    productId: createdProduct.id,
+                    salesEnvironmentId: defaultEnvironment.id,
+                    price: new client_1.Prisma.Decimal(product.price),
                 },
             });
             for (const group of product.variationGroups) {
@@ -102,6 +153,17 @@ async function createTestCompanyFromCompany({ userId, sourceCompanyId, copyData,
                             priceModifier: new client_1.Prisma.Decimal(option.priceModifier),
                             sortOrder: option.sortOrder,
                             active: option.active,
+                            costMode: option.costMode,
+                            simpleCost: option.simpleCost
+                                ? new client_1.Prisma.Decimal(option.simpleCost)
+                                : null,
+                            stockUnit: option.stockUnit,
+                            referenceQuantity: option.referenceQuantity
+                                ? new client_1.Prisma.Decimal(option.referenceQuantity)
+                                : null,
+                            referenceCost: option.referenceCost
+                                ? new client_1.Prisma.Decimal(option.referenceCost)
+                                : null,
                         },
                     });
                 }
@@ -111,6 +173,7 @@ async function createTestCompanyFromCompany({ userId, sourceCompanyId, copyData,
     });
     return {
         ok: true,
+        alreadyExists: false,
         company: result,
     };
 }

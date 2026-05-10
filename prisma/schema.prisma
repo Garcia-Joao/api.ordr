@@ -40,14 +40,14 @@ enum CompanyLicenseStatus {
 }
 
 model Company {
-  id                      String                     @id @default(cuid())
-  name                    String
-  isTest                  Boolean                    @default(false)
-  createdAt               DateTime                   @default(now())
+  id        String   @id @default(cuid())
+  name      String
+  isTest    Boolean  @default(false)
+  createdAt DateTime @default(now())
 
-  platformAccessStatus    CompanyAccessStatus        @default(ACTIVE)
-  platformBlockedAt       DateTime?
-  platformBlockedReason   String?
+  platformAccessStatus  CompanyAccessStatus @default(ACTIVE)
+  platformBlockedAt     DateTime?
+  platformBlockedReason String?
 
   categories              Category[]
   orders                  Order[]
@@ -64,6 +64,10 @@ model Company {
   staffEvaluations        StaffEvaluation[]
   buyRequests             BuyRequest[]
   productCostHistory      ProductCostHistory[]
+
+  testSourceCompanyId String?   @unique
+  testSourceCompany   Company?  @relation("CompanyTestSource", fields: [testSourceCompanyId], references: [id], onDelete: SetNull)
+  testCompanies       Company[] @relation("CompanyTestSource")
 
   eventTemplates EventTemplate[]
   eventDates     EventDate[]
@@ -985,10 +989,10 @@ model CompanyLicense {
   companyId String
   planId    String
 
-  status    CompanyLicenseStatus @default(ACTIVE)
-  startsAt  DateTime             @default(now())
-  endsAt    DateTime?
-  notes     String?
+  status   CompanyLicenseStatus @default(ACTIVE)
+  startsAt DateTime             @default(now())
+  endsAt   DateTime?
+  notes    String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

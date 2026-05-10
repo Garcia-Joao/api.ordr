@@ -32,6 +32,7 @@ export async function createTestCompanyFromCompany({
         },
       },
       memberships: true,
+      testCompanies: true,
     },
   })
 
@@ -39,21 +40,32 @@ export async function createTestCompanyFromCompany({
     throw new Error('SOURCE_COMPANY_NOT_FOUND')
   }
 
-  const existingTestCount = await prisma.company.count({
+  if (sourceCompany.isTest) {
+    throw new Error('SOURCE_COMPANY_IS_ALREADY_TEST')
+  }
+
+  const existingTestCompany = await prisma.company.findFirst({
     where: {
-      name: {
-        startsWith: `${sourceCompany.name} - Teste`,
-      },
+      testSourceCompanyId: sourceCompany.id,
+      isTest: true,
     },
   })
 
-  const suffix = existingTestCount === 0 ? '' : ` ${existingTestCount + 1}`
+  if (existingTestCompany) {
+    return {
+      ok: true,
+      alreadyExists: true,
+      company: existingTestCompany,
+    }
+  }
 
   const result = await prisma.$transaction(async (tx) => {
     const newCompany = await tx.company.create({
       data: {
-        name: `${sourceCompany.name} - Teste${suffix}`,
+        name: `${sourceCompany.name} - Teste`,
         isTest: true,
+        testSourceCompanyId: sourceCompany.id,
+        platformAccessStatus: sourceCompany.platformAccessStatus,
       },
     })
 
@@ -62,6 +74,7 @@ export async function createTestCompanyFromCompany({
         userId,
         companyId: newCompany.id,
         role: 'admin',
+        systemRole: 'ADMIN',
       },
     })
 
@@ -84,13 +97,21 @@ export async function createTestCompanyFromCompany({
       categoryIdMap.set(category.id, createdCategory.id)
     }
 
+    const defaultEnvironment = await tx.salesEnvironment.create({
+      data: {
+        companyId: newCompany.id,
+        name: 'Default',
+        color: '#dd7c12',
+        isDefault: true,
+        active: true,
+      },
+    })
+
     for (const product of sourceCompany.products) {
-      const mappedCategoryId = product.categoryId
-        ? categoryIdMap.get(product.categoryId)
-        : null
+      const mappedCategoryId = categoryIdMap.get(product.categoryId)
 
       if (!mappedCategoryId) {
-        throw new Error('PRODUCT_CATEGORY_NOT_FOUND')
+        throw new Error(`CATEGORY_NOT_MAPPED_FOR_PRODUCT_${product.id}`)
       }
 
       const createdProduct = await tx.product.create({
@@ -102,6 +123,39 @@ export async function createTestCompanyFromCompany({
           emoji: product.emoji,
           price: new Prisma.Decimal(product.price),
           active: product.active,
+          isStockOnly: product.isStockOnly,
+          trackStock: product.trackStock,
+          stockQuantity: product.stockQuantity,
+          minStock: product.minStock,
+          unitContentQuantity: product.unitContentQuantity
+            ? new Prisma.Decimal(product.unitContentQuantity)
+            : null,
+          unitContentUnit: product.unitContentUnit,
+          costMode: product.costMode,
+          simpleCost: product.simpleCost
+            ? new Prisma.Decimal(product.simpleCost)
+            : null,
+          stockUnit: product.stockUnit,
+          referenceQuantity: product.referenceQuantity
+            ? new Prisma.Decimal(product.referenceQuantity)
+            : null,
+          referenceCost: product.referenceCost
+            ? new Prisma.Decimal(product.referenceCost)
+            : null,
+          madeOnDemand: product.madeOnDemand,
+          unlimitedStock: product.unlimitedStock,
+          recipeOutputQuantity: product.recipeOutputQuantity
+            ? new Prisma.Decimal(product.recipeOutputQuantity)
+            : null,
+          recipeOutputUnit: product.recipeOutputUnit,
+        },
+      })
+
+      await tx.productEnvironmentPrice.create({
+        data: {
+          productId: createdProduct.id,
+          salesEnvironmentId: defaultEnvironment.id,
+          price: new Prisma.Decimal(product.price),
         },
       })
 
@@ -124,6 +178,17 @@ export async function createTestCompanyFromCompany({
               priceModifier: new Prisma.Decimal(option.priceModifier),
               sortOrder: option.sortOrder,
               active: option.active,
+              costMode: option.costMode,
+              simpleCost: option.simpleCost
+                ? new Prisma.Decimal(option.simpleCost)
+                : null,
+              stockUnit: option.stockUnit,
+              referenceQuantity: option.referenceQuantity
+                ? new Prisma.Decimal(option.referenceQuantity)
+                : null,
+              referenceCost: option.referenceCost
+                ? new Prisma.Decimal(option.referenceCost)
+                : null,
             },
           })
         }
@@ -135,6 +200,7 @@ export async function createTestCompanyFromCompany({
 
   return {
     ok: true,
+    alreadyExists: false,
     company: result,
   }
 }

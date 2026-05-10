@@ -304,6 +304,9 @@ export async function updateLicensePlan(id: string, input: UpdateLicensePlanInpu
 
 export async function listCompanies() {
   const companies = await prisma.company.findMany({
+    where: {
+      isTest: false,
+    },
     include: {
       memberships: {
         include: {
@@ -331,6 +334,13 @@ export async function listCompanies() {
         },
         take: 1,
       },
+      testCompanies: {
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
+        },
+      },
       _count: {
         select: {
           orders: true,
@@ -352,8 +362,11 @@ export async function listCompanies() {
 }
 
 export async function getCompany(companyId: string) {
-  const company = await prisma.company.findUnique({
-    where: { id: companyId },
+  const company = await prisma.company.findFirst({
+    where: {
+      id: companyId,
+      isTest: false,
+    },
     include: {
       memberships: {
         include: {
@@ -386,6 +399,13 @@ export async function getCompany(companyId: string) {
         },
         orderBy: {
           createdAt: 'desc',
+        },
+      },
+      testCompanies: {
+        select: {
+          id: true,
+          name: true,
+          createdAt: true,
         },
       },
       _count: {

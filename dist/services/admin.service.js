@@ -220,6 +220,9 @@ async function updateLicensePlan(id, input) {
 }
 async function listCompanies() {
     const companies = await prisma_1.prisma.company.findMany({
+        where: {
+            isTest: false,
+        },
         include: {
             memberships: {
                 include: {
@@ -247,6 +250,13 @@ async function listCompanies() {
                 },
                 take: 1,
             },
+            testCompanies: {
+                select: {
+                    id: true,
+                    name: true,
+                    createdAt: true,
+                },
+            },
             _count: {
                 select: {
                     orders: true,
@@ -266,8 +276,11 @@ async function listCompanies() {
     };
 }
 async function getCompany(companyId) {
-    const company = await prisma_1.prisma.company.findUnique({
-        where: { id: companyId },
+    const company = await prisma_1.prisma.company.findFirst({
+        where: {
+            id: companyId,
+            isTest: false,
+        },
         include: {
             memberships: {
                 include: {
@@ -300,6 +313,13 @@ async function getCompany(companyId) {
                 },
                 orderBy: {
                     createdAt: 'desc',
+                },
+            },
+            testCompanies: {
+                select: {
+                    id: true,
+                    name: true,
+                    createdAt: true,
                 },
             },
             _count: {
