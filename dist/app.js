@@ -56,6 +56,28 @@ app.use((0, cors_1.default)({
 app.use((0, cookie_parser_1.default)());
 app.use(express_1.default.json({ limit: '10mb' }));
 app.use(express_1.default.urlencoded({ extended: true, limit: '10mb' }));
+app.get('/health', async (_req, res) => {
+    try {
+        await prisma_1.prisma.$queryRaw `SELECT 1`;
+        return res.json({
+            ok: true,
+            db: 'connected',
+        });
+    }
+    catch (error) {
+        console.error(error);
+        return res.status(500).json({
+            ok: false,
+            db: 'disconnected',
+        });
+    }
+});
+app.get('/auth/me', (req, res, next) => {
+    if (!req.cookies?.auth) {
+        return res.status(401).json({ error: 'UNAUTHORIZED' });
+    }
+    return next();
+});
 app.use('/auth', auth_routes_1.default);
 app.use('/products', products_routes_1.default);
 app.use('/categories', categories_routes_1.default);
@@ -74,20 +96,4 @@ app.use('/reports', reports_routes_1.default);
 app.use('/product-cost-history', product_cost_history_routes_1.default);
 app.use('/access', access_routes_1.default);
 app.use('/audit', audit_routes_1.default);
-app.get('/health', async (_req, res) => {
-    try {
-        await prisma_1.prisma.$queryRaw `SELECT 1`;
-        return res.json({
-            ok: true,
-            db: 'connected',
-        });
-    }
-    catch (error) {
-        console.error(error);
-        return res.status(500).json({
-            ok: false,
-            db: 'disconnected',
-        });
-    }
-});
 exports.default = app;

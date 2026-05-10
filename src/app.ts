@@ -62,6 +62,32 @@ app.use(cookieParser())
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
+app.get('/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`
+
+    return res.json({
+      ok: true,
+      db: 'connected',
+    })
+  } catch (error) {
+    console.error(error)
+
+    return res.status(500).json({
+      ok: false,
+      db: 'disconnected',
+    })
+  }
+})
+
+app.get('/auth/me', (req, res, next) => {
+  if (!req.cookies?.auth) {
+    return res.status(401).json({ error: 'UNAUTHORIZED' })
+  }
+
+  return next()
+})
+
 app.use('/auth', authRouter)
 app.use('/products', productsRouter)
 app.use('/categories', categoriesRouter)
@@ -80,23 +106,5 @@ app.use('/reports', reportsRoutes)
 app.use('/product-cost-history', router)
 app.use('/access', accessRoutes)
 app.use('/audit', auditRoutes)
-
-app.get('/health', async (_req, res) => {
-  try {
-    await prisma.$queryRaw`SELECT 1`
-
-    return res.json({
-      ok: true,
-      db: 'connected',
-    })
-  } catch (error) {
-    console.error(error)
-
-    return res.status(500).json({
-      ok: false,
-      db: 'disconnected',
-    })
-  }
-})
 
 export default app
