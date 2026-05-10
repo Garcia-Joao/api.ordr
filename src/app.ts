@@ -11,13 +11,15 @@ import { internalCustomersRoutes } from './routes/internal-customers.routes'
 import salesEnvironmentsRouter from './routes/sales-environments.routes'
 import stockRouter from './routes/stock.routes'
 import printersRouter from './routes/printers.routes'
+import devicesRouter from './routes/devices.routes'
+import printJobsRouter from './routes/print-jobs.routes'
 import { peopleRoutes } from './routes/people.routes'
 import eventsRoutes from './routes/events.routes'
 import customersRoutes from './routes/customers.routes'
 import staffEvaluationsRoutes from './routes/staff-evaluations.routes'
 import buysRoutes from './routes/buys.routes'
 import reportsRoutes from './routes/reports.routes'
-import router from './routes/product-cost-history.routes'
+import productCostHistoryRouter from './routes/product-cost-history.routes'
 import accessRoutes from './routes/access.routes'
 import auditRoutes from './routes/audit.routes'
 import adminRouter from './routes/admin.routes'
@@ -34,6 +36,7 @@ const allowedOrigins = [
   'http://127.0.0.1:3001',
   'http://192.168.15.4:3001',
   'https://panelordr.com.br',
+  'https://www.panelordr.com.br',
   'https://admin.panelordr.com.br',
   process.env.FRONTEND_URL,
   process.env.FRONTEND_LAN_URL,
@@ -86,7 +89,7 @@ app.get('/health', async (_req, res) => {
 })
 
 app.get('/auth/me', (req, res, next) => {
-  if (!req.cookies?.auth) {
+  if (!req.cookies?.auth && !req.headers.authorization) {
     return res.status(401).json({ error: 'UNAUTHORIZED' })
   }
 
@@ -94,8 +97,10 @@ app.get('/auth/me', (req, res, next) => {
 })
 
 app.use('/versionCheck', versionRouter)
+
 app.use('/admin', adminRouter)
 app.use('/auth', authRouter)
+
 app.use('/products', productsRouter)
 app.use('/categories', categoriesRouter)
 app.use('/orders', ordersRouter)
@@ -103,14 +108,18 @@ app.use('/companies', companiesRouter)
 app.use('/internal-customers', internalCustomersRoutes)
 app.use('/sales-environments', salesEnvironmentsRouter)
 app.use('/stock', stockRouter)
+
 app.use('/printers', printersRouter)
+app.use('/devices', devicesRouter)
+app.use('/print-jobs', printJobsRouter)
+
 app.use('/people', peopleRoutes)
 app.use('/events', eventsRoutes)
 app.use('/customers', customersRoutes)
 app.use('/staff-evaluations', staffEvaluationsRoutes)
 app.use('/buys', buysRoutes)
 app.use('/reports', reportsRoutes)
-app.use('/product-cost-history', router)
+app.use('/product-cost-history', productCostHistoryRouter)
 app.use('/access', accessRoutes)
 app.use('/audit', auditRoutes)
 
