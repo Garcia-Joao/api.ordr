@@ -71,13 +71,12 @@ enum PrintJobType {
   TEST
 }
 
-
 model Company {
-  id        String   @id @default(cuid())
+  id          String      @id @default(cuid())
   name        String
+  isTest      Boolean     @default(false)
   companyType CompanyType @default(BUSINESS)
-  isTest      Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  createdAt   DateTime    @default(now())
 
   platformAccessStatus  CompanyAccessStatus @default(ACTIVE)
   platformBlockedAt     DateTime?
@@ -98,7 +97,8 @@ model Company {
   staffEvaluations        StaffEvaluation[]
   buyRequests             BuyRequest[]
   productCostHistory      ProductCostHistory[]
-  suppliers               Supplier[]
+  suppliers               Supplier[]                 @relation("CompanySuppliers")
+  supplierPortalProfile   Supplier?                  @relation("SupplierCompanyProfile")
 
   testSourceCompanyId String?   @unique
   testSourceCompany   Company?  @relation("CompanyTestSource", fields: [testSourceCompanyId], references: [id], onDelete: SetNull)
@@ -112,8 +112,8 @@ model Company {
   orderPrinterPortName   String?
   orderPrinterPaperWidth Int?
 
-  platformLicenses CompanyLicense[]
-  devices          Device[]
+  platformLicenses  CompanyLicense[]
+  devices           Device[]
   printPorts        PrintPort[]
   printJobs         PrintJob[]
   printPortBindings PrintPortBinding[]
@@ -273,8 +273,8 @@ model Product {
   deletedByUserId String?
   deletedAt       DateTime?
 
-  company  Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  category Category @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  category  Category   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   printPort PrintPort? @relation("ProductPrintPort", fields: [printPortId], references: [id], onDelete: SetNull)
 
   createdByUser User? @relation("ProductCreatedBy", fields: [createdByUserId], references: [id])
@@ -470,9 +470,9 @@ model Order {
   eventDateId String?
   eventDate   EventDate? @relation(fields: [eventDateId], references: [id], onDelete: SetNull)
 
-  createdByUser   User? @relation("OrderCreatedBy", fields: [createdByUserId], references: [id])
-  cancelledByUser User?  @relation("OrderCancelledBy", fields: [cancelledByUserId], references: [id])
-  device          Device? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  createdByUser   User?      @relation("OrderCreatedBy", fields: [createdByUserId], references: [id])
+  cancelledByUser User?      @relation("OrderCancelledBy", fields: [cancelledByUserId], references: [id])
+  device          Device?    @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   printJobs       PrintJob[]
 
   @@index([companyId])
@@ -836,19 +836,27 @@ model BuyRequestItem {
 model Supplier {
   id        String  @id @default(cuid())
   companyId String
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company   Company @relation("CompanySuppliers", fields: [companyId], references: [id], onDelete: Cascade)
 
-  name      String
-  document  String?
+  name        String
+  document    String?
   contactName String?
-  phone     String?
-  email     String?
-  address   String?
-  notes     String?
-  photoUrl  String?
-  photoData String? @db.Text
-  categories String[] @default([])
-  active    Boolean @default(true)
+  phone       String?
+  email       String?
+  address     String?
+  notes       String?
+  photoUrl    String?
+  photoData   String?  @db.Text
+  categories  String[] @default([])
+
+  // Portal / marketplace fields
+  supplierCompanyId String?  @unique
+  supplierCompany   Company? @relation("SupplierCompanyProfile", fields: [supplierCompanyId], references: [id], onDelete: SetNull)
+  ordrCode          String?  @unique
+  onlineEnabled     Boolean  @default(true)
+  operatingHours    Json?
+
+  active Boolean @default(true)
 
   priceTables SupplierPriceTable[]
 
@@ -859,16 +867,18 @@ model Supplier {
   @@index([companyId])
   @@index([active])
   @@index([name])
+  @@index([supplierCompanyId])
+  @@index([ordrCode])
 }
 
 model SupplierPriceTable {
-  id          String   @id @default(cuid())
-  supplierId  String
-  supplier    Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
 
   name        String
   description String?
-  active      Boolean  @default(true)
+  active      Boolean   @default(true)
   validFrom   DateTime?
   validUntil  DateTime?
 
@@ -890,12 +900,12 @@ model SupplierPriceTableItem {
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
-  itemName    String
-  sku         String?
-  unit        StockUnit @default(unit)
-  quantity    Decimal   @default(1) @db.Decimal(10, 3)
-  unitPrice   Decimal   @db.Decimal(10, 2)
-  notes       String?
+  itemName     String
+  sku          String?
+  unit         StockUnit @default(unit)
+  quantity     Decimal   @default(1) @db.Decimal(10, 3)
+  unitPrice    Decimal   @db.Decimal(10, 2)
+  notes        String?
   lastQuotedAt DateTime?
 
   createdAt DateTime @default(now())
@@ -1132,12 +1142,12 @@ model Device {
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
-  company            Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  currentUser        User?       @relation(fields: [currentUserId], references: [id], onDelete: SetNull)
-  orders             Order[]
-  boundPrintPorts    PrintPort[] @relation("DevicePrintPortBindings")
-  printJobs          PrintJob[]
-  printPortBindings  PrintPortBinding[]
+  company           Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  currentUser       User?              @relation(fields: [currentUserId], references: [id], onDelete: SetNull)
+  orders            Order[]
+  boundPrintPorts   PrintPort[]        @relation("DevicePrintPortBindings")
+  printJobs         PrintJob[]
+  printPortBindings PrintPortBinding[]
 
   @@index([companyId])
   @@index([currentUserId])
@@ -1146,8 +1156,6 @@ model Device {
   @@index([clientType])
   @@index([isPrintTerminal])
 }
-
-
 
 model PrintTemplate {
   id        String   @id @default(cuid())
@@ -1165,25 +1173,25 @@ model PrintTemplate {
 }
 
 model PrintPort {
-  id                 String   @id @default(cuid())
-  companyId          String
-  name               String
-  description        String?
-  active             Boolean  @default(true)
-  sortOrder          Int      @default(0)
-  terminalDeviceId   String?
-  localPrinterName   String?
-  localPrinterLabel  String?
-  paperWidth         Int?
-  isDefaultReceipt   Boolean  @default(false)
-  isSystem           Boolean  @default(false)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                String   @id @default(cuid())
+  companyId         String
+  name              String
+  description       String?
+  active            Boolean  @default(true)
+  sortOrder         Int      @default(0)
+  terminalDeviceId  String?
+  localPrinterName  String?
+  localPrinterLabel String?
+  paperWidth        Int?
+  isDefaultReceipt  Boolean  @default(false)
+  isSystem          Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  company        Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  terminalDevice Device?    @relation("DevicePrintPortBindings", fields: [terminalDeviceId], references: [id], onDelete: SetNull)
-  categories     Category[] @relation("CategoryPrintPort")
-  products       Product[]  @relation("ProductPrintPort")
+  company        Company            @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  terminalDevice Device?            @relation("DevicePrintPortBindings", fields: [terminalDeviceId], references: [id], onDelete: SetNull)
+  categories     Category[]         @relation("CategoryPrintPort")
+  products       Product[]          @relation("ProductPrintPort")
   printJobs      PrintJob[]
   bindings       PrintPortBinding[]
 

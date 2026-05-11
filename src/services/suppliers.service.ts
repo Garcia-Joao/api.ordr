@@ -25,6 +25,23 @@ const SUPPLIER_INCLUDE = {
   },
 } satisfies Prisma.SupplierInclude
 
+
+async function generateSupplierCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    let code = ''
+    for (let i = 0; i < 8; i += 1) {
+      code += alphabet[Math.floor(Math.random() * alphabet.length)]
+    }
+
+    const existing = await prisma.supplier.findUnique({ where: { ordrCode: code } })
+    if (!existing) return code
+  }
+
+  throw new Error('SUPPLIER_CODE_GENERATION_FAILED')
+}
+
 function cleanText(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
@@ -149,6 +166,7 @@ export async function createSupplier(input: {
       photoUrl: cleanText(input.photoUrl),
       photoData: cleanText(input.photoData),
       categories: parseCategories(input.categories),
+      ordrCode: await generateSupplierCode(),
       priceTables: input.createDefaultTable === false ? undefined : {
         create: { name: 'Tabela padrão' },
       },

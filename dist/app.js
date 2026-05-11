@@ -23,6 +23,7 @@ const customers_routes_1 = __importDefault(require("./routes/customers.routes"))
 const staff_evaluations_routes_1 = __importDefault(require("./routes/staff-evaluations.routes"));
 const buys_routes_1 = __importDefault(require("./routes/buys.routes"));
 const suppliers_routes_1 = __importDefault(require("./routes/suppliers.routes"));
+const supplier_portal_routes_1 = __importDefault(require("./routes/supplier-portal.routes"));
 const reports_routes_1 = __importDefault(require("./routes/reports.routes"));
 const product_cost_history_routes_1 = __importDefault(require("./routes/product-cost-history.routes"));
 const access_routes_1 = __importDefault(require("./routes/access.routes"));
@@ -117,6 +118,7 @@ app.use('/customers', customers_routes_1.default);
 app.use('/staff-evaluations', staff_evaluations_routes_1.default);
 app.use('/buys', buys_routes_1.default);
 app.use('/suppliers', suppliers_routes_1.default);
+app.use('/supplier-portal', supplier_portal_routes_1.default);
 app.use('/reports', reports_routes_1.default);
 app.use('/product-cost-history', product_cost_history_routes_1.default);
 app.use('/access', access_routes_1.default);

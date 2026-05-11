@@ -836,6 +836,22 @@ export async function deleteCompanyMembership(membershipId: string) {
   }
 }
 
+async function generateSupplierCode(client: any) {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    let code = ''
+    for (let i = 0; i < 8; i += 1) {
+      code += alphabet[Math.floor(Math.random() * alphabet.length)]
+    }
+
+    const existing = await client.supplier.findUnique({ where: { ordrCode: code } })
+    if (!existing) return code
+  }
+
+  throw new Error('SUPPLIER_CODE_GENERATION_FAILED')
+}
+
 export async function createCompanyWithInitialAccess(input: CreateCompanyInput) {
   const companyName = input.name.trim()
   const ownerUsername = input.ownerUsername.trim()
@@ -915,6 +931,30 @@ export async function createCompanyWithInitialAccess(input: CreateCompanyInput) 
       },
     })
 
+    let supplierProfile = null
+
+    if ((input.companyType ?? 'BUSINESS') === 'SUPPLIER') {
+      supplierProfile = await tx.supplier.create({
+        data: {
+          companyId: company.id,
+          supplierCompanyId: company.id,
+          name: company.name,
+          ordrCode: await generateSupplierCode(tx),
+          onlineEnabled: true,
+          operatingHours: [
+            { day: 'sun', label: 'Domingo', enabled: false, startTime: '09:00', endTime: '13:00' },
+            { day: 'mon', label: 'Segunda', enabled: true, startTime: '08:00', endTime: '18:00' },
+            { day: 'tue', label: 'Terça', enabled: true, startTime: '08:00', endTime: '18:00' },
+            { day: 'wed', label: 'Quarta', enabled: true, startTime: '08:00', endTime: '18:00' },
+            { day: 'thu', label: 'Quinta', enabled: true, startTime: '08:00', endTime: '18:00' },
+            { day: 'fri', label: 'Sexta', enabled: true, startTime: '08:00', endTime: '18:00' },
+            { day: 'sat', label: 'Sábado', enabled: true, startTime: '09:00', endTime: '13:00' },
+          ],
+          priceTables: { create: { name: 'Tabela padrão' } },
+        },
+      })
+    }
+
     let license = null
 
     if (plan) {
@@ -957,6 +997,7 @@ export async function createCompanyWithInitialAccess(input: CreateCompanyInput) 
       },
       membership,
       defaultEnvironment,
+      supplierProfile,
       license,
     }
   })
