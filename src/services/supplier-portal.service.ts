@@ -273,6 +273,7 @@ function serializeItem(item: any) {
     itemName: item.itemName,
     name: item.itemName,
     sku: item.sku ?? null,
+    category: item.category ?? item.product?.category?.name ?? null,
     unit: item.unit,
     quantity: decimalToNumber(item.quantity),
     unitPrice: decimalToNumber(item.unitPrice),
@@ -280,7 +281,6 @@ function serializeItem(item: any) {
     notes: item.notes ?? null,
     lastQuotedAt: item.lastQuotedAt ?? null,
     linkedStockProductName: item.product?.name ?? null,
-    category: item.product?.category?.name ?? null,
     categoryEmoji: item.product?.category?.emoji ?? null,
   }
 }
@@ -449,6 +449,7 @@ export async function createPriceTableItem(companyId: string, tableId: string, i
       priceTableId: tableId,
       itemName: requiredText(input.itemName ?? input.name, 'ITEM_NAME'),
       sku: cleanText(input.sku),
+      category: cleanText(input.category),
       unit: parseUnit(input.unit),
       quantity: parseQuantity(input.quantity),
       unitPrice: parseMoney(input.unitPrice ?? input.price, 'UNIT_PRICE'),
@@ -475,6 +476,7 @@ export async function updatePriceTableItem(companyId: string, tableId: string, i
         ? requiredText(input.itemName ?? input.name, 'ITEM_NAME')
         : undefined,
       sku: typeof input.sku === 'undefined' ? undefined : cleanText(input.sku),
+      category: typeof input.category === 'undefined' ? undefined : cleanText(input.category),
       unit: typeof input.unit === 'undefined' ? undefined : parseUnit(input.unit),
       quantity: typeof input.quantity === 'undefined' ? undefined : parseQuantity(input.quantity),
       unitPrice: typeof input.unitPrice === 'undefined' && typeof input.price === 'undefined'
