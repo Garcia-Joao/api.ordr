@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma'
 
-const ONLINE_THRESHOLD_MS = 2 * 60 * 1000
+const ONLINE_THRESHOLD_MS = 45 * 1000
 
 type PrintJobStatus = 'PENDING' | 'CLAIMED' | 'PRINTING' | 'PRINTED' | 'FAILED' | 'CANCELLED'
 
@@ -482,6 +482,15 @@ export async function updatePrintJobStatus(companyId: string, terminalDeviceId: 
   const job = await prisma.printJob.findFirst({ where: { id: jobId, companyId, terminalDeviceId } })
   if (!job) throw new Error('PRINT_JOB_NOT_FOUND')
 
+  if (status === 'PRINTED') {
+    const deleted = await prisma.printJob.delete({
+      where: { id: jobId },
+      include: { port: { include: { bindings: true } }, order: true },
+    })
+
+    return normalizeJob({ ...deleted, status: 'PRINTED', printedAt: new Date() })
+  }
+
   const now = new Date()
   const updated = await prisma.printJob.update({
     where: { id: jobId },
@@ -489,11 +498,28 @@ export async function updatePrintJobStatus(companyId: string, terminalDeviceId: 
       status,
       errorMessage: errorMessage ?? null,
       ...(status === 'PRINTING' ? { startedAt: now } : {}),
-      ...(status === 'PRINTED' ? { printedAt: now } : {}),
       ...(status === 'FAILED' ? { failedAt: now } : {}),
     },
     include: { port: { include: { bindings: true } }, order: true },
   })
 
   return normalizeJob(updated)
+}
+
+export async function deletePrintJob(companyId: string, terminalDeviceId: string, jobId: string) {
+  const job = await prisma.printJob.findFirst({
+    where: {
+      id: jobId,
+      companyId,
+      terminalDeviceId,
+      status: { in: ['PENDING', 'CLAIMED', 'FAILED', 'CANCELLED'] },
+    },
+    include: { port: { include: { bindings: true } }, order: true },
+  })
+
+  if (!job) throw new Error('PRINT_JOB_NOT_FOUND')
+
+  await prisma.printJob.delete({ where: { id: jobId } })
+
+  return normalizeJob({ ...job, status: 'CANCELLED' })
 }

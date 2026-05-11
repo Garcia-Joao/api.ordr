@@ -92,3 +92,19 @@ export async function updatePrintJobStatus(req: AuthRequest, res: Response) {
     return handleError(res, error)
   }
 }
+
+export async function deletePrintJob(req: AuthRequest, res: Response) {
+  try {
+    const companyId = req.user?.companyId
+    const terminalDeviceId = String(req.body?.terminalDeviceId ?? req.query?.terminalDeviceId ?? '')
+    const jobId = param(req.params.id)
+    if (!companyId) return res.status(401).json({ error: 'Unauthorized' })
+    if (!terminalDeviceId) return res.status(400).json({ error: 'terminalDeviceId é obrigatório.' })
+
+    const job = await service.deletePrintJob(companyId, terminalDeviceId, jobId)
+    return res.json({ job })
+  } catch (error: any) {
+    console.error('delete print job error:', error)
+    return handleError(res, error)
+  }
+}
