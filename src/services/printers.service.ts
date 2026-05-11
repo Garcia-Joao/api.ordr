@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma'
 
-const ONLINE_THRESHOLD_MS = 2 * 60 * 1000
+const ONLINE_THRESHOLD_MS = 45 * 1000
 
 const {
   listGenericTextPrinters,
