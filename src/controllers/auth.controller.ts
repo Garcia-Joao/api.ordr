@@ -1,10 +1,14 @@
 import { Request, Response } from 'express'
 import * as authService from '../services/auth.service'
 
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN?.trim() || undefined
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
+
 const COOKIE_OPTIONS = {
   httpOnly: true,
   sameSite: 'lax' as const,
-  secure: false,
+  secure: IS_PRODUCTION,
+  ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
   maxAge: 1000 * 60 * 60 * 24 * 7,
 }
 
@@ -68,7 +72,8 @@ export async function logout(_req: Request, res: Response) {
     res.clearCookie(COOKIE_NAME, {
       httpOnly: true,
       sameSite: 'lax',
-      secure: false,
+      secure: IS_PRODUCTION,
+      ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
     })
 
     return res.json({ ok: true })
@@ -99,12 +104,7 @@ export async function switchCompany(req: AuthRequest, res: Response) {
 
     const result = await authService.switchUserCompany(userId, companyId)
 
-    res.cookie(COOKIE_NAME, result.token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: false,
-      maxAge: 1000 * 60 * 60 * 24 * 7,
-    })
+    res.cookie(COOKIE_NAME, result.token, COOKIE_OPTIONS)
 
     return res.json({
       user: result.user,
