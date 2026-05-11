@@ -863,6 +863,7 @@ model Supplier {
   active    Boolean @default(true)
 
   priceTables      SupplierPriceTable[]
+  catalogProducts  SupplierCatalogProduct[]
   businessAccesses SupplierAccess[]
 
   createdAt DateTime @default(now())
@@ -891,6 +892,38 @@ model SupplierAccess {
   @@unique([businessCompanyId, supplierId])
   @@index([businessCompanyId])
   @@index([supplierId])
+}
+
+
+model SupplierCatalogProduct {
+  id         String   @id @default(cuid())
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  name      String
+  sku       String?
+  category  String?
+  unit      StockUnit @default(unit)
+  quantity  Decimal   @default(1) @db.Decimal(10, 3)
+  unitPrice Decimal   @default(0) @db.Decimal(10, 2)
+  notes     String?
+  active    Boolean   @default(true)
+
+  stockEnabled     Boolean  @default(false)
+  stockQuantity    Decimal  @default(0) @db.Decimal(10, 3)
+  minStockQuantity Decimal  @default(0) @db.Decimal(10, 3)
+  stockUpdatedAt   DateTime?
+
+  tableItems SupplierPriceTableItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([supplierId, name])
+  @@index([supplierId])
+  @@index([active])
+  @@index([sku])
+  @@index([category])
 }
 
 model SupplierPriceTable {
@@ -922,6 +955,9 @@ model SupplierPriceTableItem {
   productId String?
   product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
 
+  supplierProductId String?
+  supplierProduct   SupplierCatalogProduct? @relation(fields: [supplierProductId], references: [id], onDelete: SetNull)
+
   itemName    String
   sku         String?
   category    String?
@@ -943,6 +979,7 @@ model SupplierPriceTableItem {
 
   @@index([priceTableId])
   @@index([productId])
+  @@index([supplierProductId])
   @@index([itemName])
   @@index([category])
   @@index([active])
