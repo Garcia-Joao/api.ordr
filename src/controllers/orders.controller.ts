@@ -132,6 +132,36 @@ export async function reprintOrderTickets(req: AuthRequest, res: Response) {
   }
 }
 
+
+export async function reprintOrderReceipt(req: AuthRequest, res: Response) {
+  try {
+    const companyId = req.user?.companyId
+    const orderId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id
+
+    if (!companyId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const jobs = await orderService.reprintOrderReceipt(companyId, orderId)
+    return res.status(201).json({ jobs })
+  } catch (error: any) {
+    console.error('reprintOrderReceipt error:', error)
+
+    switch (error?.message) {
+      case 'ORDER_NOT_FOUND':
+        return res.status(404).json({ error: 'Order not found' })
+      case 'RECEIPT_PORT_NOT_BOUND':
+        return res.status(400).json({ error: 'Port Caixa/Recibos não está vinculada a uma impressora no Terminal.' })
+      case 'RECEIPT_PORT_NOT_FOUND':
+        return res.status(400).json({ error: 'Port Caixa/Recibos não encontrada.' })
+      default:
+        return res.status(500).json({
+          error: error?.message || 'Failed to reprint order receipt',
+        })
+    }
+  }
+}
+
 export async function getInternalCustomerTodayOrders(req: AuthRequest, res: Response) {
   try {
     const companyId = req.user?.companyId

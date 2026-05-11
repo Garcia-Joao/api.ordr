@@ -1,5 +1,5 @@
 import { prisma } from '../lib/prisma'
-import { getPrintTemplates } from './printers.service'
+import { getDefaultReceiptPrintPort, getPrintTemplates } from './printers.service'
 
 const ONLINE_THRESHOLD_MS = 45 * 1000
 
@@ -371,20 +371,7 @@ export async function createBuyRequestShoppingListPrintJobs(input: {
           },
         },
       })
-    : await prisma.printPort.findFirst({
-        where: {
-          companyId: input.companyId,
-          active: true,
-        },
-        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-        include: {
-          bindings: {
-            include: {
-              terminalDevice: true,
-            },
-          },
-        },
-      })
+    : await getDefaultReceiptPrintPort(input.companyId)
 
   if (!port) {
     const failedJob = await prisma.printJob.create({
@@ -452,6 +439,130 @@ export async function createBuyRequestShoppingListPrintJobs(input: {
   return jobs.map(normalizeJob)
 }
 
+
+
+function getPaymentMethodLabel(value?: string | null) {
+  const labels: Record<string, string> = {
+    money: 'Dinheiro',
+    pix: 'Pix',
+    credit: 'Crédito',
+    debit: 'Débito',
+  }
+
+  return labels[String(value ?? '')] ?? 'Não informado'
+}
+
+function buildReceiptPayload(order: any, port: any) {
+  const subtotal = (order.items ?? []).reduce(
+    (sum: number, item: any) => sum + Number(item.totalPrice ?? 0),
+    0
+  )
+  const total = Number(order.total ?? subtotal)
+  const taxApplied = Boolean(order.taxApplied)
+  const taxAmount = taxApplied ? Math.max(0, total - subtotal) : 0
+
+  return {
+    kind: 'RECEIPT',
+    title: 'Recibo',
+    orderId: order.id,
+    comanda: order.comanda,
+    comandaName: order.comandaName ?? null,
+    status: order.status,
+    paymentMethod: order.paymentMethod ?? null,
+    paymentMethodLabel: getPaymentMethodLabel(order.paymentMethod),
+    taxApplied,
+    subtotal: Number(subtotal.toFixed(2)),
+    taxAmount: Number(taxAmount.toFixed(2)),
+    total: Number(total.toFixed(2)),
+    createdAt: order.createdAt,
+    paidAt: order.paidAt ?? null,
+    port: port ? { id: port.id, name: port.name } : null,
+    items: (order.items ?? []).map((item: any) => ({
+      name: item.product?.name ?? 'Item',
+      quantity: Number(item.quantity ?? 1),
+      unitPrice: Number(item.unitPrice ?? 0),
+      totalPrice: Number(item.totalPrice ?? 0),
+      notes: item.notes ?? null,
+      variations: (item.variations ?? []).flatMap((selection: any) =>
+        (selection.options ?? []).map((option: any) => option.option?.name).filter(Boolean)
+      ),
+    })),
+  }
+}
+
+export async function createOrderReceiptPrintJob(companyId: string, orderId: string) {
+  const order = await prisma.order.findFirst({
+    where: { id: orderId, companyId },
+    include: {
+      items: {
+        include: {
+          product: true,
+          variations: { include: { options: { include: { option: true } } } },
+        },
+      },
+    },
+  })
+
+  if (!order) throw new Error('ORDER_NOT_FOUND')
+
+  const port = await getDefaultReceiptPrintPort(companyId)
+
+  if (!port) {
+    const failedJob = await prisma.printJob.create({
+      data: {
+        companyId,
+        orderId: order.id,
+        portId: null,
+        terminalDeviceId: null,
+        status: 'FAILED',
+        errorMessage: 'RECEIPT_PORT_NOT_FOUND',
+        payload: buildReceiptPayload(order, null) as any,
+      },
+      include: { port: { include: { bindings: true } }, order: true },
+    })
+
+    return normalizeJob(failedJob)
+  }
+
+  const bindings = (port.bindings ?? []).filter((binding: any) =>
+    binding.terminalDevice?.printTerminalEnabled &&
+    binding.terminalDevice?.clientType === 'ELECTRON'
+  )
+
+  if (bindings.length === 0) {
+    const failedJob = await prisma.printJob.create({
+      data: {
+        companyId,
+        orderId: order.id,
+        portId: port.id,
+        terminalDeviceId: null,
+        status: 'FAILED',
+        errorMessage: 'RECEIPT_PORT_NOT_BOUND',
+        payload: buildReceiptPayload(order, port) as any,
+      },
+      include: { port: { include: { bindings: true } }, order: true },
+    })
+
+    return normalizeJob(failedJob)
+  }
+
+  const terminalDeviceId = bindings[0].terminalDeviceId
+
+  const job = await prisma.printJob.create({
+    data: {
+      companyId,
+      orderId: order.id,
+      portId: port.id,
+      terminalDeviceId,
+      status: 'PENDING',
+      errorMessage: null,
+      payload: buildReceiptPayload(order, port) as any,
+    },
+    include: { port: { include: { bindings: true } }, order: true },
+  })
+
+  return normalizeJob(job)
+}
 
 export async function reprintOrderTickets(companyId: string, orderId: string) {
   // Existing orders do not currently persist the item print mode chosen at sale time,

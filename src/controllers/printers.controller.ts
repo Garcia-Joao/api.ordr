@@ -127,6 +127,7 @@ export async function deletePrintPort(req: AuthRequest, res: Response) {
   } catch (error: any) {
     console.error('deletePrintPort error:', error)
     if (error?.message === 'PRINT_PORT_NOT_FOUND') return res.status(404).json({ error: 'Port não encontrada.' })
+    if (error?.message === 'PRINT_PORT_SYSTEM_LOCKED') return res.status(400).json({ error: 'Esta é uma port fixa do sistema e não pode ser removida.' })
     return res.status(500).json({ error: error?.message || 'Failed to delete print port' })
   }
 }

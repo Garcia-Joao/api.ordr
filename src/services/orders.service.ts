@@ -1,7 +1,7 @@
 import { OrderStatus, Prisma, PaymentMethod } from '@prisma/client'
 import PDFDocument from 'pdfkit'
 import { prisma } from '../lib/prisma'
-import { createOrderPrintJobs } from './print-jobs.service'
+import { createOrderPrintJobs, createOrderReceiptPrintJob } from './print-jobs.service'
 import { createAuditLog } from './audit.service'
 
 type PrintItemMode = 'SEPARATE' | 'GROUPED'
@@ -982,6 +982,11 @@ const order = await prisma.$transaction(async (tx: any) => {
 
 export async function reprintOrderTickets(companyId: string, orderId: string) {
   return createOrderPrintJobs(companyId, orderId)
+}
+
+export async function reprintOrderReceipt(companyId: string, orderId: string) {
+  const job = await createOrderReceiptPrintJob(companyId, orderId)
+  return [job]
 }
 
 export async function getOrdersByCompany(companyId: string, includeCancelled = true) {

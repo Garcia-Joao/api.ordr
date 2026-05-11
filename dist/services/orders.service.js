@@ -5,6 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.paySelectedInternalCustomerOrders = paySelectedInternalCustomerOrders;
 exports.createOrder = createOrder;
+exports.reprintOrderTickets = reprintOrderTickets;
+exports.reprintOrderReceipt = reprintOrderReceipt;
 exports.getOrdersByCompany = getOrdersByCompany;
 exports.cancelOrder = cancelOrder;
 exports.getInternalCustomerPendingOrders = getInternalCustomerPendingOrders;
@@ -733,6 +735,13 @@ async function createOrder(data, userId) {
         taxApplied: order.taxApplied,
         printJobs,
     };
+}
+async function reprintOrderTickets(companyId, orderId) {
+    return (0, print_jobs_service_1.createOrderPrintJobs)(companyId, orderId);
+}
+async function reprintOrderReceipt(companyId, orderId) {
+    const job = await (0, print_jobs_service_1.createOrderReceiptPrintJob)(companyId, orderId);
+    return [job];
 }
 async function getOrdersByCompany(companyId, includeCancelled = true) {
     const orders = await prisma_1.prisma.order.findMany({

@@ -81,6 +81,8 @@ function normalizePort(port: any) {
     localPrinterName: port.localPrinterName ?? null,
     localPrinterLabel: port.localPrinterLabel ?? null,
     paperWidth: port.paperWidth ?? null,
+    isDefaultReceipt: Boolean(port.isDefaultReceipt),
+    isSystem: Boolean(port.isSystem),
     bindings: (port.bindings ?? []).map(normalizeBinding),
     createdAt: port.createdAt?.toISOString?.() ?? port.createdAt,
     updatedAt: port.updatedAt?.toISOString?.() ?? port.updatedAt,
@@ -145,7 +147,41 @@ export async function getPrintTerminals(companyId: string) {
   return devices.map(normalizeTerminal)
 }
 
+export async function ensureDefaultReceiptPrintPort(companyId: string) {
+  const existing = await prisma.printPort.findFirst({
+    where: { companyId, isDefaultReceipt: true },
+    include: portInclude,
+  })
+
+  if (existing) return normalizePort(existing)
+
+  const port = await prisma.printPort.create({
+    data: {
+      companyId,
+      name: 'Caixa / Recibos',
+      description: 'Port fixa para recibos do caixa e listas de compras.',
+      active: true,
+      sortOrder: -100,
+      isDefaultReceipt: true,
+      isSystem: true,
+    },
+    include: portInclude,
+  })
+
+  return normalizePort(port)
+}
+
+export async function getDefaultReceiptPrintPort(companyId: string) {
+  await ensureDefaultReceiptPrintPort(companyId)
+  return prisma.printPort.findFirst({
+    where: { companyId, isDefaultReceipt: true, active: true },
+    include: { bindings: { include: { terminalDevice: true } } },
+  })
+}
+
 export async function listPrintPorts(companyId: string) {
+  await ensureDefaultReceiptPrintPort(companyId)
+
   const ports = await prisma.printPort.findMany({
     where: { companyId },
     include: portInclude,
@@ -194,6 +230,10 @@ export async function updatePrintPort(companyId: string, portId: string, input: 
 export async function deletePrintPort(companyId: string, portId: string) {
   const existing = await prisma.printPort.findFirst({ where: { id: portId, companyId } })
   if (!existing) throw new Error('PRINT_PORT_NOT_FOUND')
+
+  if (existing.isDefaultReceipt || existing.isSystem) {
+    throw new Error('PRINT_PORT_SYSTEM_LOCKED')
+  }
 
   await prisma.printPort.delete({ where: { id: portId } })
   return { ok: true }

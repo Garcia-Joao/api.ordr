@@ -8,6 +8,8 @@ const router = (0, express_1.Router)();
 router.get('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('orders.view', 'pdv.view', 'interno.view'), orders_controller_1.getOrders);
 router.post('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('orders.create'), orders_controller_1.createOrder);
 router.patch('/:id/cancel', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('orders.cancel'), orders_controller_1.cancelOrder);
+router.post('/:id/reprint', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('orders.view', 'orders.create', 'pdv.view'), orders_controller_1.reprintOrderTickets);
+router.post('/:id/reprint-receipt', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('orders.view', 'orders.create', 'pdv.view'), orders_controller_1.reprintOrderReceipt);
 router.get('/internal-customer/:internalCustomerId/today', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('internalCustomers.view', 'interno.view'), orders_controller_1.getInternalCustomerTodayOrders);
 router.post('/internal-customer/:internalCustomerId/pay-today', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('internalCustomers.pay', 'interno.view'), orders_controller_1.payInternalCustomerTodayOrders);
 router.post('/internal-customer/:internalCustomerId/pay-selected', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('internalCustomers.pay', 'interno.view'), orders_controller_1.paySelectedInternalCustomerOrders);

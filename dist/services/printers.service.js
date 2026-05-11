@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getSystemPrinters = getSystemPrinters;
 exports.getPrintTerminals = getPrintTerminals;
+exports.ensureDefaultReceiptPrintPort = ensureDefaultReceiptPrintPort;
+exports.getDefaultReceiptPrintPort = getDefaultReceiptPrintPort;
 exports.listPrintPorts = listPrintPorts;
 exports.createPrintPort = createPrintPort;
 exports.updatePrintPort = updatePrintPort;
@@ -73,6 +75,8 @@ function normalizePort(port) {
         localPrinterName: port.localPrinterName ?? null,
         localPrinterLabel: port.localPrinterLabel ?? null,
         paperWidth: port.paperWidth ?? null,
+        isDefaultReceipt: Boolean(port.isDefaultReceipt),
+        isSystem: Boolean(port.isSystem),
         bindings: (port.bindings ?? []).map(normalizeBinding),
         createdAt: port.createdAt?.toISOString?.() ?? port.createdAt,
         updatedAt: port.updatedAt?.toISOString?.() ?? port.updatedAt,
@@ -130,7 +134,36 @@ async function getPrintTerminals(companyId) {
     });
     return devices.map(normalizeTerminal);
 }
+async function ensureDefaultReceiptPrintPort(companyId) {
+    const existing = await prisma_1.prisma.printPort.findFirst({
+        where: { companyId, isDefaultReceipt: true },
+        include: portInclude,
+    });
+    if (existing)
+        return normalizePort(existing);
+    const port = await prisma_1.prisma.printPort.create({
+        data: {
+            companyId,
+            name: 'Caixa / Recibos',
+            description: 'Port fixa para recibos do caixa e listas de compras.',
+            active: true,
+            sortOrder: -100,
+            isDefaultReceipt: true,
+            isSystem: true,
+        },
+        include: portInclude,
+    });
+    return normalizePort(port);
+}
+async function getDefaultReceiptPrintPort(companyId) {
+    await ensureDefaultReceiptPrintPort(companyId);
+    return prisma_1.prisma.printPort.findFirst({
+        where: { companyId, isDefaultReceipt: true, active: true },
+        include: { bindings: { include: { terminalDevice: true } } },
+    });
+}
 async function listPrintPorts(companyId) {
+    await ensureDefaultReceiptPrintPort(companyId);
     const ports = await prisma_1.prisma.printPort.findMany({
         where: { companyId },
         include: portInclude,
@@ -174,6 +207,9 @@ async function deletePrintPort(companyId, portId) {
     const existing = await prisma_1.prisma.printPort.findFirst({ where: { id: portId, companyId } });
     if (!existing)
         throw new Error('PRINT_PORT_NOT_FOUND');
+    if (existing.isDefaultReceipt || existing.isSystem) {
+        throw new Error('PRINT_PORT_SYSTEM_LOCKED');
+    }
     await prisma_1.prisma.printPort.delete({ where: { id: portId } });
     return { ok: true };
 }

@@ -1094,6 +1094,8 @@ model PrintPort {
   localPrinterName   String?
   localPrinterLabel  String?
   paperWidth         Int?
+  isDefaultReceipt   Boolean  @default(false)
+  isSystem           Boolean  @default(false)
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -1109,6 +1111,8 @@ model PrintPort {
   @@index([terminalDeviceId])
   @@index([active])
   @@index([sortOrder])
+  @@index([isDefaultReceipt])
+  @@index([isSystem])
 }
 
 model PrintPortBinding {

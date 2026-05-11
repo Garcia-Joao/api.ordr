@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createPrintJob = createPrintJob;
 exports.createOrderPrintJobs = createOrderPrintJobs;
 exports.createBuyRequestShoppingListPrintJobs = createBuyRequestShoppingListPrintJobs;
+exports.createOrderReceiptPrintJob = createOrderReceiptPrintJob;
+exports.reprintOrderTickets = reprintOrderTickets;
 exports.listTerminalPendingJobs = listTerminalPendingJobs;
 exports.claimPrintJob = claimPrintJob;
 exports.updatePrintJobStatus = updatePrintJobStatus;
@@ -61,8 +63,11 @@ async function getPortForJob(companyId, portId) {
     if (!port)
         throw new Error('PRINT_PORT_NOT_FOUND');
     const hasAvailableBinding = (port.bindings ?? []).some((binding) => binding.terminalDevice?.printTerminalEnabled &&
-        binding.terminalDevice?.clientType === 'ELECTRON' &&
-        isTerminalOnline(binding.terminalDevice));
+        binding.terminalDevice?.clientType === 'ELECTRON');
+    // Do not reject the job just because lastSeenAt is stale. When the Electron
+    // window is hidden in the tray, the app can still be alive while heartbeat is
+    // delayed; jobs should remain queued for the bound terminal instead of being
+    // lost as FAILED.
     if (!hasAvailableBinding)
         throw new Error('PRINT_PORT_NOT_BOUND');
     return port;
@@ -189,8 +194,7 @@ async function createOrderPrintJobs(companyId, orderId, options = {}) {
         const port = portsById.get(portId) ?? null;
         const tickets = buildTicketsForPortItems(itemsWithModes);
         const bindings = (port?.bindings ?? []).filter((binding) => binding.terminalDevice?.printTerminalEnabled &&
-            binding.terminalDevice?.clientType === 'ELECTRON' &&
-            isTerminalOnline(binding.terminalDevice));
+            binding.terminalDevice?.clientType === 'ELECTRON');
         if (!port || bindings.length === 0) {
             jobs.push(await prisma_1.prisma.printJob.create({
                 data: {
@@ -304,20 +308,7 @@ async function createBuyRequestShoppingListPrintJobs(input) {
                 },
             },
         })
-        : await prisma_1.prisma.printPort.findFirst({
-            where: {
-                companyId: input.companyId,
-                active: true,
-            },
-            orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
-            include: {
-                bindings: {
-                    include: {
-                        terminalDevice: true,
-                    },
-                },
-            },
-        });
+        : await (0, printers_service_1.getDefaultReceiptPrintPort)(input.companyId);
     if (!port) {
         const failedJob = await prisma_1.prisma.printJob.create({
             data: {
@@ -335,8 +326,7 @@ async function createBuyRequestShoppingListPrintJobs(input) {
         return [normalizeJob(failedJob)];
     }
     const bindings = (port.bindings ?? []).filter((binding) => binding.terminalDevice?.printTerminalEnabled &&
-        binding.terminalDevice?.clientType === 'ELECTRON' &&
-        isTerminalOnline(binding.terminalDevice));
+        binding.terminalDevice?.clientType === 'ELECTRON');
     if (bindings.length === 0) {
         const failedJob = await prisma_1.prisma.printJob.create({
             data: {
@@ -371,6 +361,115 @@ async function createBuyRequestShoppingListPrintJobs(input) {
         }));
     }
     return jobs.map(normalizeJob);
+}
+function getPaymentMethodLabel(value) {
+    const labels = {
+        money: 'Dinheiro',
+        pix: 'Pix',
+        credit: 'Crédito',
+        debit: 'Débito',
+    };
+    return labels[String(value ?? '')] ?? 'Não informado';
+}
+function buildReceiptPayload(order, port) {
+    const subtotal = (order.items ?? []).reduce((sum, item) => sum + Number(item.totalPrice ?? 0), 0);
+    const total = Number(order.total ?? subtotal);
+    const taxApplied = Boolean(order.taxApplied);
+    const taxAmount = taxApplied ? Math.max(0, total - subtotal) : 0;
+    return {
+        kind: 'RECEIPT',
+        title: 'Recibo',
+        orderId: order.id,
+        comanda: order.comanda,
+        comandaName: order.comandaName ?? null,
+        status: order.status,
+        paymentMethod: order.paymentMethod ?? null,
+        paymentMethodLabel: getPaymentMethodLabel(order.paymentMethod),
+        taxApplied,
+        subtotal: Number(subtotal.toFixed(2)),
+        taxAmount: Number(taxAmount.toFixed(2)),
+        total: Number(total.toFixed(2)),
+        createdAt: order.createdAt,
+        paidAt: order.paidAt ?? null,
+        port: port ? { id: port.id, name: port.name } : null,
+        items: (order.items ?? []).map((item) => ({
+            name: item.product?.name ?? 'Item',
+            quantity: Number(item.quantity ?? 1),
+            unitPrice: Number(item.unitPrice ?? 0),
+            totalPrice: Number(item.totalPrice ?? 0),
+            notes: item.notes ?? null,
+            variations: (item.variations ?? []).flatMap((selection) => (selection.options ?? []).map((option) => option.option?.name).filter(Boolean)),
+        })),
+    };
+}
+async function createOrderReceiptPrintJob(companyId, orderId) {
+    const order = await prisma_1.prisma.order.findFirst({
+        where: { id: orderId, companyId },
+        include: {
+            items: {
+                include: {
+                    product: true,
+                    variations: { include: { options: { include: { option: true } } } },
+                },
+            },
+        },
+    });
+    if (!order)
+        throw new Error('ORDER_NOT_FOUND');
+    const port = await (0, printers_service_1.getDefaultReceiptPrintPort)(companyId);
+    if (!port) {
+        const failedJob = await prisma_1.prisma.printJob.create({
+            data: {
+                companyId,
+                orderId: order.id,
+                portId: null,
+                terminalDeviceId: null,
+                status: 'FAILED',
+                errorMessage: 'RECEIPT_PORT_NOT_FOUND',
+                payload: buildReceiptPayload(order, null),
+            },
+            include: { port: { include: { bindings: true } }, order: true },
+        });
+        return normalizeJob(failedJob);
+    }
+    const bindings = (port.bindings ?? []).filter((binding) => binding.terminalDevice?.printTerminalEnabled &&
+        binding.terminalDevice?.clientType === 'ELECTRON');
+    if (bindings.length === 0) {
+        const failedJob = await prisma_1.prisma.printJob.create({
+            data: {
+                companyId,
+                orderId: order.id,
+                portId: port.id,
+                terminalDeviceId: null,
+                status: 'FAILED',
+                errorMessage: 'RECEIPT_PORT_NOT_BOUND',
+                payload: buildReceiptPayload(order, port),
+            },
+            include: { port: { include: { bindings: true } }, order: true },
+        });
+        return normalizeJob(failedJob);
+    }
+    const terminalDeviceId = bindings[0].terminalDeviceId;
+    const job = await prisma_1.prisma.printJob.create({
+        data: {
+            companyId,
+            orderId: order.id,
+            portId: port.id,
+            terminalDeviceId,
+            status: 'PENDING',
+            errorMessage: null,
+            payload: buildReceiptPayload(order, port),
+        },
+        include: { port: { include: { bindings: true } }, order: true },
+    });
+    return normalizeJob(job);
+}
+async function reprintOrderTickets(companyId, orderId) {
+    // Existing orders do not currently persist the item print mode chosen at sale time,
+    // so reprint uses the default ticket mode: one ticket per unit unless the caller
+    // creates a future persisted mode. This still respects the current product/category
+    // print ports and the saved print template.
+    return createOrderPrintJobs(companyId, orderId);
 }
 async function listTerminalPendingJobs(companyId, terminalDeviceId) {
     const terminal = await prisma_1.prisma.device.findFirst({

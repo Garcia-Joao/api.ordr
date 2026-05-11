@@ -10,6 +10,7 @@ import {
   paySelectedInternalCustomerOrders,
   getInternalCustomerPendingOrders,
   reprintOrderTickets,
+  reprintOrderReceipt,
 } from '../controllers/orders.controller'
 import { requireAuth } from '../middleware/auth.middleware'
 import { requirePermission } from '../middleware/require-permission.middleware'
@@ -20,6 +21,7 @@ router.get('/', requireAuth, requirePermission('orders.view', 'pdv.view', 'inter
 router.post('/', requireAuth, requirePermission('orders.create'), createOrder)
 router.patch('/:id/cancel', requireAuth, requirePermission('orders.cancel'), cancelOrder)
 router.post('/:id/reprint', requireAuth, requirePermission('orders.view', 'orders.create', 'pdv.view'), reprintOrderTickets)
+router.post('/:id/reprint-receipt', requireAuth, requirePermission('orders.view', 'orders.create', 'pdv.view'), reprintOrderReceipt)
 
 router.get(
   '/internal-customer/:internalCustomerId/today',
