@@ -123,6 +123,7 @@ function toSafeUser(user, activeCompanyId) {
         companyId: currentCompany?.id ?? activeCompanyId,
         currentCompany,
         companies: safeCompanies,
+        requiresCompanySelection: safeCompanies.length > 1,
     };
 }
 const userMembershipInclude = {
@@ -192,6 +193,7 @@ async function loginTerminalWithLaunchToken(launchToken) {
                     id: membership.company.id,
                     name: membership.company.name,
                     isTest: membership.company.isTest,
+                    companyType: String(membership.company.companyType ?? 'BUSINESS'),
                     systemRole: membership.systemRole,
                 },
                 companies: user.memberships.map((item) => ({

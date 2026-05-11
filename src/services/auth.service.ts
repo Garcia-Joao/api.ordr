@@ -47,6 +47,7 @@ export type SafeUser = {
   companyId: string
   currentCompany: SafeCompany | null
   companies: SafeCompany[]
+  requiresCompanySelection?: boolean
 }
 
 type UserWithMemberships = {
@@ -207,6 +208,7 @@ function toSafeUser(user: UserWithMemberships, activeCompanyId: string): SafeUse
     companyId: currentCompany?.id ?? activeCompanyId,
     currentCompany,
     companies: safeCompanies,
+    requiresCompanySelection: safeCompanies.length > 1,
   }
 }
 
@@ -299,6 +301,7 @@ export async function loginTerminalWithLaunchToken(launchToken: string) {
           id: membership.company.id,
           name: membership.company.name,
           isTest: membership.company.isTest,
+          companyType: String(membership.company.companyType ?? 'BUSINESS'),
           systemRole: membership.systemRole,
         },
         companies: user.memberships.map((item) => ({
