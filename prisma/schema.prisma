@@ -92,6 +92,7 @@ model Company {
   staffEvaluations        StaffEvaluation[]
   buyRequests             BuyRequest[]
   productCostHistory      ProductCostHistory[]
+  suppliers               Supplier[]
 
   testSourceCompanyId String?   @unique
   testSourceCompany   Company?  @relation("CompanyTestSource", fields: [testSourceCompanyId], references: [id], onDelete: SetNull)
@@ -283,6 +284,7 @@ model Product {
   variationOptionRecipeUsages ProductVariationOptionRecipeItem[] @relation("VariationOptionRecipeIngredient")
   buyRequestItems             BuyRequestItem[]
   costHistory                 ProductCostHistory[]
+  supplierPriceItems          SupplierPriceTableItem[]
 
   @@index([companyId])
   @@index([categoryId])
@@ -823,6 +825,76 @@ model BuyRequestItem {
   @@index([buyRequestId])
   @@index([productId])
   @@index([status])
+}
+
+model Supplier {
+  id        String  @id @default(cuid())
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  name      String
+  document  String?
+  contactName String?
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  active    Boolean @default(true)
+
+  priceTables SupplierPriceTable[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([active])
+  @@index([name])
+}
+
+model SupplierPriceTable {
+  id          String   @id @default(cuid())
+  supplierId  String
+  supplier    Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  validFrom   DateTime?
+  validUntil  DateTime?
+
+  items SupplierPriceTableItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([supplierId, name])
+  @@index([supplierId])
+  @@index([active])
+}
+
+model SupplierPriceTableItem {
+  id           String             @id @default(cuid())
+  priceTableId String
+  priceTable   SupplierPriceTable @relation(fields: [priceTableId], references: [id], onDelete: Cascade)
+
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  itemName    String
+  sku         String?
+  unit        StockUnit @default(unit)
+  quantity    Decimal   @default(1) @db.Decimal(10, 3)
+  unitPrice   Decimal   @db.Decimal(10, 2)
+  notes       String?
+  lastQuotedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([priceTableId])
+  @@index([productId])
+  @@index([itemName])
 }
 
 model ProductCostHistory {

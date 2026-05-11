@@ -46,6 +46,8 @@ export const PERMISSION_CATALOG: PermissionCatalogGroup[] = [
       { key: 'stock.quickBuy', label: 'Usar compra rápida' },
       { key: 'buys.view', label: 'Ver compras' },
       { key: 'buys.manage', label: 'Gerenciar compras' },
+      { key: 'suppliers.view', label: 'Ver fornecedores' },
+      { key: 'suppliers.manage', label: 'Gerenciar fornecedores e tabelas de preço' },
     ],
   },
   {

@@ -18,6 +18,7 @@ import eventsRoutes from './routes/events.routes'
 import customersRoutes from './routes/customers.routes'
 import staffEvaluationsRoutes from './routes/staff-evaluations.routes'
 import buysRoutes from './routes/buys.routes'
+import suppliersRouter from './routes/suppliers.routes'
 import reportsRoutes from './routes/reports.routes'
 import productCostHistoryRouter from './routes/product-cost-history.routes'
 import accessRoutes from './routes/access.routes'
@@ -126,6 +127,7 @@ app.use('/events', eventsRoutes)
 app.use('/customers', customersRoutes)
 app.use('/staff-evaluations', staffEvaluationsRoutes)
 app.use('/buys', buysRoutes)
+app.use('/suppliers', suppliersRouter)
 app.use('/reports', reportsRoutes)
 app.use('/product-cost-history', productCostHistoryRouter)
 app.use('/access', accessRoutes)
