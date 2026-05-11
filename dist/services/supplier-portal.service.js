@@ -16,6 +16,8 @@ exports.createPriceTableItemFromExisting = createPriceTableItemFromExisting;
 exports.duplicatePriceTable = duplicatePriceTable;
 exports.bulkAdjustPriceTablePrices = bulkAdjustPriceTablePrices;
 exports.updateItemStock = updateItemStock;
+exports.togglePriceTableItemActive = togglePriceTableItemActive;
+exports.adjustItemStock = adjustItemStock;
 exports.listOrders = listOrders;
 const client_1 = require("@prisma/client");
 const prisma_1 = require("../lib/prisma");
@@ -268,6 +270,7 @@ function serializeItem(item) {
         unitPrice: decimalToNumber(item.unitPrice),
         price: decimalToNumber(item.unitPrice),
         notes: item.notes ?? null,
+        active: Boolean(item.active ?? true),
         stockEnabled: Boolean(item.stockEnabled),
         stockQuantity: decimalToNumber(item.stockQuantity),
         minStockQuantity: decimalToNumber(item.minStockQuantity),
@@ -294,7 +297,7 @@ async function getDashboard(companyId) {
     const { profile, tables, products } = serializePortal(supplier);
     const activeTables = tables.filter((table) => table.active);
     const linkedProducts = products.filter((product) => product.productId).length;
-    const visibleProducts = products.filter((product) => product.tableActive);
+    const visibleProducts = products.filter((product) => product.tableActive && product.active);
     const lowStockProducts = visibleProducts.filter((product) => product.lowStock).length;
     return {
         supplier: profile,
@@ -428,6 +431,7 @@ async function createPriceTableItem(companyId, tableId, input) {
             quantity: parseQuantity(input.quantity),
             unitPrice: parseMoney(input.unitPrice ?? input.price, 'UNIT_PRICE'),
             notes: cleanText(input.notes),
+            active: typeof input.active === 'boolean' ? input.active : true,
             stockEnabled: typeof input.stockEnabled === 'boolean' ? input.stockEnabled : false,
             stockQuantity: parseStockQuantity(input.stockQuantity ?? 0),
             minStockQuantity: parseStockQuantity(input.minStockQuantity ?? 0),
@@ -459,6 +463,7 @@ async function updatePriceTableItem(companyId, tableId, itemId, input) {
                 ? undefined
                 : parseMoney(input.unitPrice ?? input.price, 'UNIT_PRICE'),
             notes: typeof input.notes === 'undefined' ? undefined : cleanText(input.notes),
+            active: typeof input.active === 'undefined' ? undefined : Boolean(input.active),
             stockEnabled: typeof input.stockEnabled === 'undefined' ? undefined : Boolean(input.stockEnabled),
             stockQuantity: typeof input.stockQuantity === 'undefined' ? undefined : parseStockQuantity(input.stockQuantity),
             minStockQuantity: typeof input.minStockQuantity === 'undefined' ? undefined : parseStockQuantity(input.minStockQuantity),
@@ -505,6 +510,7 @@ async function createPriceTableItemFromExisting(companyId, tableId, input) {
             quantity: typeof input.quantity === 'undefined' ? source.quantity : parseQuantity(input.quantity),
             unitPrice: new client_1.Prisma.Decimal(nextPrice.toFixed(2)),
             notes: typeof input.notes === 'undefined' ? source.notes : cleanText(input.notes),
+            active: typeof input.active === 'boolean' ? input.active : true,
             stockEnabled: Boolean(input.stockEnabled ?? source.stockEnabled),
             stockQuantity: typeof input.stockQuantity === 'undefined' ? source.stockQuantity : parseStockQuantity(input.stockQuantity),
             minStockQuantity: typeof input.minStockQuantity === 'undefined' ? source.minStockQuantity : parseStockQuantity(input.minStockQuantity),
@@ -548,6 +554,7 @@ async function duplicatePriceTable(companyId, tableId, input) {
                         quantity: item.quantity,
                         unitPrice: new client_1.Prisma.Decimal(nextPrice.toFixed(2)),
                         notes: item.notes,
+                        active: item.active ?? true,
                         stockEnabled: item.stockEnabled,
                         stockQuantity: item.stockQuantity,
                         minStockQuantity: item.minStockQuantity,
@@ -593,6 +600,49 @@ async function updateItemStock(companyId, tableId, itemId, input) {
             stockEnabled: typeof input.stockEnabled === 'undefined' ? undefined : Boolean(input.stockEnabled),
             stockQuantity: typeof input.stockQuantity === 'undefined' ? undefined : parseStockQuantity(input.stockQuantity),
             minStockQuantity: typeof input.minStockQuantity === 'undefined' ? undefined : parseStockQuantity(input.minStockQuantity),
+            stockUpdatedAt: new Date(),
+        },
+    });
+    return listPriceTables(companyId);
+}
+async function togglePriceTableItemActive(companyId, tableId, itemId, input) {
+    const supplier = await ensureSupplierProfile(companyId);
+    const item = await prisma_1.prisma.supplierPriceTableItem.findFirst({
+        where: { id: itemId, priceTableId: tableId, priceTable: { supplierId: supplier.id } },
+    });
+    if (!item)
+        throw new Error('PRICE_TABLE_ITEM_NOT_FOUND');
+    await prisma_1.prisma.supplierPriceTableItem.update({
+        where: { id: itemId },
+        data: { active: Boolean(input?.active) },
+    });
+    return listPriceTables(companyId);
+}
+async function adjustItemStock(companyId, tableId, itemId, input) {
+    const supplier = await ensureSupplierProfile(companyId);
+    const item = await prisma_1.prisma.supplierPriceTableItem.findFirst({
+        where: { id: itemId, priceTableId: tableId, priceTable: { supplierId: supplier.id } },
+    });
+    if (!item)
+        throw new Error('PRICE_TABLE_ITEM_NOT_FOUND');
+    const current = decimalToNumber(item.stockQuantity);
+    const hasSetValue = typeof input?.stockQuantity !== 'undefined' && input?.mode === 'set';
+    const delta = typeof input?.delta === 'undefined' || input?.delta === null || input?.delta === ''
+        ? 0
+        : Number(String(input.delta).replace(',', '.'));
+    if (!Number.isFinite(delta))
+        throw new Error('STOCK_DELTA_INVALID');
+    const nextQuantity = hasSetValue
+        ? decimalToNumber(parseStockQuantity(input.stockQuantity))
+        : Math.max(0, current + delta);
+    await prisma_1.prisma.supplierPriceTableItem.update({
+        where: { id: itemId },
+        data: {
+            stockEnabled: true,
+            stockQuantity: new client_1.Prisma.Decimal(nextQuantity.toFixed(3)),
+            minStockQuantity: typeof input?.minStockQuantity === 'undefined'
+                ? undefined
+                : parseStockQuantity(input.minStockQuantity),
             stockUpdatedAt: new Date(),
         },
     });

@@ -929,6 +929,7 @@ model SupplierPriceTableItem {
   quantity    Decimal   @default(1) @db.Decimal(10, 3)
   unitPrice   Decimal   @db.Decimal(10, 2)
   notes       String?
+  active      Boolean  @default(true)
 
   stockEnabled     Boolean  @default(false)
   stockQuantity    Decimal  @default(0) @db.Decimal(10, 3)
@@ -944,6 +945,7 @@ model SupplierPriceTableItem {
   @@index([productId])
   @@index([itemName])
   @@index([category])
+  @@index([active])
 }
 
 model ProductCostHistory {

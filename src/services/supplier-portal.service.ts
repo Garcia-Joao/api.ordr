@@ -287,6 +287,7 @@ function serializeItem(item: any) {
     unitPrice: decimalToNumber(item.unitPrice),
     price: decimalToNumber(item.unitPrice),
     notes: item.notes ?? null,
+    active: Boolean(item.active ?? true),
     stockEnabled: Boolean(item.stockEnabled),
     stockQuantity: decimalToNumber(item.stockQuantity),
     minStockQuantity: decimalToNumber(item.minStockQuantity),
@@ -318,7 +319,7 @@ export async function getDashboard(companyId: string) {
   const { profile, tables, products } = serializePortal(supplier)
   const activeTables = tables.filter((table: any) => table.active)
   const linkedProducts = products.filter((product: any) => product.productId).length
-  const visibleProducts = products.filter((product: any) => product.tableActive)
+  const visibleProducts = products.filter((product: any) => product.tableActive && product.active)
   const lowStockProducts = visibleProducts.filter((product: any) => product.lowStock).length
 
   return {
@@ -471,6 +472,7 @@ export async function createPriceTableItem(companyId: string, tableId: string, i
       quantity: parseQuantity(input.quantity),
       unitPrice: parseMoney(input.unitPrice ?? input.price, 'UNIT_PRICE'),
       notes: cleanText(input.notes),
+      active: typeof input.active === 'boolean' ? input.active : true,
       stockEnabled: typeof input.stockEnabled === 'boolean' ? input.stockEnabled : false,
       stockQuantity: parseStockQuantity(input.stockQuantity ?? 0),
       minStockQuantity: parseStockQuantity(input.minStockQuantity ?? 0),
@@ -504,6 +506,7 @@ export async function updatePriceTableItem(companyId: string, tableId: string, i
         ? undefined
         : parseMoney(input.unitPrice ?? input.price, 'UNIT_PRICE'),
       notes: typeof input.notes === 'undefined' ? undefined : cleanText(input.notes),
+      active: typeof input.active === 'undefined' ? undefined : Boolean(input.active),
       stockEnabled: typeof input.stockEnabled === 'undefined' ? undefined : Boolean(input.stockEnabled),
       stockQuantity: typeof input.stockQuantity === 'undefined' ? undefined : parseStockQuantity(input.stockQuantity),
       minStockQuantity: typeof input.minStockQuantity === 'undefined' ? undefined : parseStockQuantity(input.minStockQuantity),
@@ -554,6 +557,7 @@ export async function createPriceTableItemFromExisting(companyId: string, tableI
       quantity: typeof input.quantity === 'undefined' ? source.quantity : parseQuantity(input.quantity),
       unitPrice: new Prisma.Decimal(nextPrice.toFixed(2)),
       notes: typeof input.notes === 'undefined' ? source.notes : cleanText(input.notes),
+      active: typeof input.active === 'boolean' ? input.active : true,
       stockEnabled: Boolean(input.stockEnabled ?? source.stockEnabled),
       stockQuantity: typeof input.stockQuantity === 'undefined' ? source.stockQuantity : parseStockQuantity(input.stockQuantity),
       minStockQuantity: typeof input.minStockQuantity === 'undefined' ? source.minStockQuantity : parseStockQuantity(input.minStockQuantity),
@@ -600,6 +604,7 @@ export async function duplicatePriceTable(companyId: string, tableId: string, in
             quantity: item.quantity,
             unitPrice: new Prisma.Decimal(nextPrice.toFixed(2)),
             notes: item.notes,
+            active: item.active ?? true,
             stockEnabled: item.stockEnabled,
             stockQuantity: item.stockQuantity,
             minStockQuantity: item.minStockQuantity,
@@ -649,6 +654,54 @@ export async function updateItemStock(companyId: string, tableId: string, itemId
       stockEnabled: typeof input.stockEnabled === 'undefined' ? undefined : Boolean(input.stockEnabled),
       stockQuantity: typeof input.stockQuantity === 'undefined' ? undefined : parseStockQuantity(input.stockQuantity),
       minStockQuantity: typeof input.minStockQuantity === 'undefined' ? undefined : parseStockQuantity(input.minStockQuantity),
+      stockUpdatedAt: new Date(),
+    },
+  })
+
+  return listPriceTables(companyId)
+}
+
+export async function togglePriceTableItemActive(companyId: string, tableId: string, itemId: string, input: any) {
+  const supplier = await ensureSupplierProfile(companyId)
+  const item = await prisma.supplierPriceTableItem.findFirst({
+    where: { id: itemId, priceTableId: tableId, priceTable: { supplierId: supplier.id } },
+  })
+  if (!item) throw new Error('PRICE_TABLE_ITEM_NOT_FOUND')
+
+  await prisma.supplierPriceTableItem.update({
+    where: { id: itemId },
+    data: { active: Boolean(input?.active) },
+  })
+
+  return listPriceTables(companyId)
+}
+
+export async function adjustItemStock(companyId: string, tableId: string, itemId: string, input: any) {
+  const supplier = await ensureSupplierProfile(companyId)
+  const item = await prisma.supplierPriceTableItem.findFirst({
+    where: { id: itemId, priceTableId: tableId, priceTable: { supplierId: supplier.id } },
+  })
+  if (!item) throw new Error('PRICE_TABLE_ITEM_NOT_FOUND')
+
+  const current = decimalToNumber(item.stockQuantity)
+  const hasSetValue = typeof input?.stockQuantity !== 'undefined' && input?.mode === 'set'
+  const delta = typeof input?.delta === 'undefined' || input?.delta === null || input?.delta === ''
+    ? 0
+    : Number(String(input.delta).replace(',', '.'))
+  if (!Number.isFinite(delta)) throw new Error('STOCK_DELTA_INVALID')
+
+  const nextQuantity = hasSetValue
+    ? decimalToNumber(parseStockQuantity(input.stockQuantity))
+    : Math.max(0, current + delta)
+
+  await prisma.supplierPriceTableItem.update({
+    where: { id: itemId },
+    data: {
+      stockEnabled: true,
+      stockQuantity: new Prisma.Decimal(nextQuantity.toFixed(3)),
+      minStockQuantity: typeof input?.minStockQuantity === 'undefined'
+        ? undefined
+        : parseStockQuantity(input.minStockQuantity),
       stockUpdatedAt: new Date(),
     },
   })

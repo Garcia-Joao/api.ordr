@@ -13,8 +13,8 @@ import {
   priceTablesController,
   productsController,
   profileController,
-  updatePriceTableController,
   updateItemStockController,
+  updatePriceTableController,
   updatePriceTableItemController,
   updateProfileController,
 } from '../controllers/supplier-portal.controller'
@@ -25,6 +25,7 @@ const router = Router()
 router.use(requireAuth)
 
 router.get('/dashboard', dashboardController)
+
 router.get('/profile', profileController)
 router.patch('/profile', updateProfileController)
 router.patch('/availability', availabilityController)
@@ -41,8 +42,12 @@ router.delete('/price-tables/:tableId', deletePriceTableController)
 
 router.post('/price-tables/:tableId/items', createPriceTableItemController)
 router.post('/price-tables/:tableId/items/from-product', createPriceTableItemFromExistingController)
+
 router.patch('/price-tables/:tableId/items/:itemId', updatePriceTableItemController)
+router.patch('/price-tables/:tableId/items/:itemId/active', updatePriceTableItemController)
 router.patch('/price-tables/:tableId/items/:itemId/stock', updateItemStockController)
+router.patch('/price-tables/:tableId/items/:itemId/stock-adjust', updateItemStockController)
+
 router.delete('/price-tables/:tableId/items/:itemId', deletePriceTableItemController)
 
 export default router

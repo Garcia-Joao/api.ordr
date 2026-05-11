@@ -13,6 +13,8 @@ exports.duplicatePriceTableController = duplicatePriceTableController;
 exports.bulkAdjustPriceTablePricesController = bulkAdjustPriceTablePricesController;
 exports.createPriceTableItemFromExistingController = createPriceTableItemFromExistingController;
 exports.updateItemStockController = updateItemStockController;
+exports.togglePriceTableItemActiveController = togglePriceTableItemActiveController;
+exports.adjustItemStockController = adjustItemStockController;
 exports.deletePriceTableController = deletePriceTableController;
 exports.createPriceTableItemController = createPriceTableItemController;
 exports.updatePriceTableItemController = updatePriceTableItemController;
@@ -142,6 +144,22 @@ async function createPriceTableItemFromExistingController(req, res) {
 async function updateItemStockController(req, res) {
     try {
         return res.json(await (0, supplier_portal_service_1.updateItemStock)(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), getParam(req.params.itemId, 'ITEM_ID'), req.body));
+    }
+    catch (error) {
+        return handleError(res, error);
+    }
+}
+async function togglePriceTableItemActiveController(req, res) {
+    try {
+        return res.json(await (0, supplier_portal_service_1.togglePriceTableItemActive)(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), getParam(req.params.itemId, 'ITEM_ID'), req.body));
+    }
+    catch (error) {
+        return handleError(res, error);
+    }
+}
+async function adjustItemStockController(req, res) {
+    try {
+        return res.json(await (0, supplier_portal_service_1.adjustItemStock)(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), getParam(req.params.itemId, 'ITEM_ID'), req.body));
     }
     catch (error) {
         return handleError(res, error);

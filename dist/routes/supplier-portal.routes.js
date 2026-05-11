@@ -20,6 +20,8 @@ router.delete('/price-tables/:tableId', supplier_portal_controller_1.deletePrice
 router.post('/price-tables/:tableId/items', supplier_portal_controller_1.createPriceTableItemController);
 router.post('/price-tables/:tableId/items/from-product', supplier_portal_controller_1.createPriceTableItemFromExistingController);
 router.patch('/price-tables/:tableId/items/:itemId', supplier_portal_controller_1.updatePriceTableItemController);
+router.patch('/price-tables/:tableId/items/:itemId/active', supplier_portal_controller_1.updatePriceTableItemController);
 router.patch('/price-tables/:tableId/items/:itemId/stock', supplier_portal_controller_1.updateItemStockController);
+router.patch('/price-tables/:tableId/items/:itemId/stock-adjust', supplier_portal_controller_1.updateItemStockController);
 router.delete('/price-tables/:tableId/items/:itemId', supplier_portal_controller_1.deletePriceTableItemController);
 exports.default = router;

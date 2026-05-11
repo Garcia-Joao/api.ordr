@@ -6,6 +6,8 @@ import {
   duplicatePriceTable,
   bulkAdjustPriceTablePrices,
   updateItemStock,
+  togglePriceTableItemActive,
+  adjustItemStock,
   deletePriceTable,
   deletePriceTableItem,
   getDashboard,
@@ -147,6 +149,32 @@ export async function createPriceTableItemFromExistingController(req: AuthReques
 export async function updateItemStockController(req: AuthRequest, res: Response) {
   try {
     return res.json(await updateItemStock(
+      getCompanyId(req),
+      getParam(req.params.tableId, 'TABLE_ID'),
+      getParam(req.params.itemId, 'ITEM_ID'),
+      req.body
+    ))
+  } catch (error) {
+    return handleError(res, error)
+  }
+}
+
+export async function togglePriceTableItemActiveController(req: AuthRequest, res: Response) {
+  try {
+    return res.json(await togglePriceTableItemActive(
+      getCompanyId(req),
+      getParam(req.params.tableId, 'TABLE_ID'),
+      getParam(req.params.itemId, 'ITEM_ID'),
+      req.body
+    ))
+  } catch (error) {
+    return handleError(res, error)
+  }
+}
+
+export async function adjustItemStockController(req: AuthRequest, res: Response) {
+  try {
+    return res.json(await adjustItemStock(
       getCompanyId(req),
       getParam(req.params.tableId, 'TABLE_ID'),
       getParam(req.params.itemId, 'ITEM_ID'),
