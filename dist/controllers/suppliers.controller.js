@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.listSuppliersController = listSuppliersController;
 exports.getSupplierController = getSupplierController;
+exports.addSupplierAccessByCodeController = addSupplierAccessByCodeController;
 exports.createSupplierController = createSupplierController;
 exports.updateSupplierController = updateSupplierController;
 exports.deactivateSupplierController = deactivateSupplierController;
@@ -49,6 +50,14 @@ async function listSuppliersController(req, res) {
 async function getSupplierController(req, res) {
     try {
         return res.json(await (0, suppliers_service_1.getSupplier)(getCompanyId(req), getSingleParam(req.params.id, 'SUPPLIER_ID')));
+    }
+    catch (error) {
+        return handleError(res, error);
+    }
+}
+async function addSupplierAccessByCodeController(req, res) {
+    try {
+        return res.status(201).json(await (0, suppliers_service_1.addSupplierAccessByCode)(getCompanyId(req), req.body?.ordrCode ?? req.body?.code));
     }
     catch (error) {
         return handleError(res, error);

@@ -3,6 +3,7 @@ import {
   createSupplier,
   createSupplierPriceTable,
   createSupplierPriceTableItem,
+  addSupplierAccessByCode,
   deactivateSupplier,
   deleteInactiveSupplier,
   deleteSupplierPriceTable,
@@ -56,6 +57,15 @@ export async function listSuppliersController(req: Request, res: Response) {
 export async function getSupplierController(req: Request, res: Response) {
   try {
     return res.json(await getSupplier(getCompanyId(req), getSingleParam(req.params.id, 'SUPPLIER_ID')))
+  } catch (error) {
+    return handleError(res, error)
+  }
+}
+
+
+export async function addSupplierAccessByCodeController(req: Request, res: Response) {
+  try {
+    return res.status(201).json(await addSupplierAccessByCode(getCompanyId(req), req.body?.ordrCode ?? req.body?.code))
   } catch (error) {
     return handleError(res, error)
   }

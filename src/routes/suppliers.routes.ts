@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import {
   createSupplierController,
+  addSupplierAccessByCodeController,
   createSupplierPriceTableController,
   createSupplierPriceTableItemController,
   deactivateSupplierController,
@@ -20,6 +21,7 @@ import { requirePermission } from '../middleware/require-permission.middleware'
 const router = Router()
 
 router.get('/', requireAuth, requirePermission('suppliers.view', 'suppliers.manage'), listSuppliersController)
+router.post('/access-code', requireAuth, requirePermission('suppliers.view', 'suppliers.manage'), addSupplierAccessByCodeController)
 router.post('/', requireAuth, requirePermission('suppliers.manage'), createSupplierController)
 router.get('/:id', requireAuth, requirePermission('suppliers.view', 'suppliers.manage'), getSupplierController)
 router.patch('/:id', requireAuth, requirePermission('suppliers.manage'), updateSupplierController)

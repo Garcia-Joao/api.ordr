@@ -218,6 +218,7 @@ function serializeSupplier(supplier) {
         active: supplier.active,
         ordrCode: supplier.ordrCode ?? null,
         onlineEnabled: Boolean(supplier.onlineEnabled),
+        publicListingEnabled: Boolean(supplier.publicListingEnabled),
         operatingHours: normalizeOperatingHours(supplier.operatingHours),
         onlineStatus: computeOnlineStatus(supplier),
         createdAt: supplier.createdAt,
@@ -293,6 +294,7 @@ async function getDashboard(companyId) {
             { label: 'Produtos ativos', value: String(visibleProducts.length) },
             { label: 'Tabelas ativas', value: String(activeTables.length) },
             { label: 'Produtos vinculados', value: String(linkedProducts) },
+            { label: 'Visibilidade', value: profile.publicListingEnabled ? 'Público' : 'Por código' },
         ],
     };
 }
@@ -316,6 +318,7 @@ async function updateProfile(companyId, input) {
             photoData: typeof input.photoData === 'undefined' ? undefined : cleanText(input.photoData),
             categories: typeof input.categories === 'undefined' ? undefined : parseCategories(input.categories),
             onlineEnabled: typeof input.onlineEnabled === 'boolean' ? input.onlineEnabled : undefined,
+            publicListingEnabled: typeof input.publicListingEnabled === 'boolean' ? input.publicListingEnabled : undefined,
             operatingHours: typeof input.operatingHours === 'undefined'
                 ? undefined
                 : normalizeOperatingHours(input.operatingHours),

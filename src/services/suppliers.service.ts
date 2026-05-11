@@ -2,6 +2,35 @@ import { Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 
 type StockUnitInput = 'unit' | 'ml' | 'l' | 'g' | 'kg'
+type WeekDayKey = 'sun' | 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat'
+
+type OperatingHour = {
+  day: WeekDayKey
+  label: string
+  enabled: boolean
+  startTime: string
+  endTime: string
+}
+
+const DAY_LABELS: Record<WeekDayKey, string> = {
+  sun: 'Domingo',
+  mon: 'Segunda',
+  tue: 'Terça',
+  wed: 'Quarta',
+  thu: 'Quinta',
+  fri: 'Sexta',
+  sat: 'Sábado',
+}
+
+const DAY_KEYS: WeekDayKey[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+
+const DEFAULT_OPERATING_HOURS: OperatingHour[] = DAY_KEYS.map((day) => ({
+  day,
+  label: DAY_LABELS[day],
+  enabled: day !== 'sun',
+  startTime: day === 'sat' ? '09:00' : '08:00',
+  endTime: day === 'sat' ? '13:00' : '18:00',
+}))
 
 const SUPPLIER_INCLUDE = {
   priceTables: {
@@ -25,27 +54,15 @@ const SUPPLIER_INCLUDE = {
   },
 } satisfies Prisma.SupplierInclude
 
-
-async function generateSupplierCode() {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    let code = ''
-    for (let i = 0; i < 8; i += 1) {
-      code += alphabet[Math.floor(Math.random() * alphabet.length)]
-    }
-
-    const existing = await prisma.supplier.findUnique({ where: { ordrCode: code } })
-    if (!existing) return code
-  }
-
-  throw new Error('SUPPLIER_CODE_GENERATION_FAILED')
-}
-
 function cleanText(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+function requiredText(value: unknown, field: string) {
+  const cleaned = cleanText(value)
+  if (!cleaned) throw new Error(`${field}_REQUIRED`)
+  return cleaned
+}
 
 function parseCategories(value: unknown) {
   if (Array.isArray(value)) {
@@ -64,12 +81,6 @@ function parseCategories(value: unknown) {
   }
 
   return []
-}
-
-function requiredText(value: unknown, field: string) {
-  const cleaned = cleanText(value)
-  if (!cleaned) throw new Error(`${field}_REQUIRED`)
-  return cleaned
 }
 
 function parseMoney(value: unknown, field: string) {
@@ -98,6 +109,142 @@ function parseUnit(value: unknown): StockUnitInput {
   return unit as StockUnitInput
 }
 
+function isTime(value: unknown) {
+  return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value)
+}
+
+function normalizeOperatingHours(value: unknown): OperatingHour[] {
+  const source = Array.isArray(value) ? value : DEFAULT_OPERATING_HOURS
+  const byDay = new Map<string, any>(source.map((item: any) => [String(item?.day), item]))
+
+  return DAY_KEYS.map((day) => {
+    const item = byDay.get(day)
+    return {
+      day,
+      label: DAY_LABELS[day],
+      enabled: typeof item?.enabled === 'boolean' ? item.enabled : day !== 'sun',
+      startTime: isTime(item?.startTime) ? item.startTime : day === 'sat' ? '09:00' : '08:00',
+      endTime: isTime(item?.endTime) ? item.endTime : day === 'sat' ? '13:00' : '18:00',
+    }
+  })
+}
+
+function timeToMinutes(time: string) {
+  const [hours, minutes] = time.split(':').map(Number)
+  return hours * 60 + minutes
+}
+
+function isInsideWindow(nowMinutes: number, startTime: string, endTime: string) {
+  const start = timeToMinutes(startTime)
+  const end = timeToMinutes(endTime)
+
+  if (start === end) return true
+  if (start < end) return nowMinutes >= start && nowMinutes <= end
+  return nowMinutes >= start || nowMinutes <= end
+}
+
+function getTodayKey(date = new Date()): WeekDayKey {
+  return DAY_KEYS[date.getDay()]
+}
+
+function computeOnlineStatus(supplier: any) {
+  const hours = normalizeOperatingHours(supplier.operatingHours)
+  const now = new Date()
+  const today = hours.find((item) => item.day === getTodayKey(now))
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
+  const insideOperatingHours = Boolean(today?.enabled && isInsideWindow(nowMinutes, today.startTime, today.endTime))
+
+  return {
+    onlineEnabled: Boolean(supplier.onlineEnabled),
+    insideOperatingHours,
+    isOnline: Boolean(supplier.onlineEnabled) && insideOperatingHours,
+    today: today ?? null,
+  }
+}
+
+function decimalToNumber(value: Prisma.Decimal | number | string | null | undefined) {
+  if (value == null) return 0
+  return Number(value)
+}
+
+function serializeItem(item: any) {
+  return {
+    id: item.id,
+    priceTableId: item.priceTableId,
+    productId: item.productId ?? null,
+    product: item.product ?? null,
+    itemName: item.itemName,
+    name: item.itemName,
+    sku: item.sku ?? null,
+    category: item.category ?? item.product?.category?.name ?? null,
+    unit: item.unit,
+    quantity: decimalToNumber(item.quantity),
+    unitPrice: decimalToNumber(item.unitPrice),
+    notes: item.notes ?? null,
+    lastQuotedAt: item.lastQuotedAt ?? null,
+    createdAt: item.createdAt,
+    updatedAt: item.updatedAt,
+  }
+}
+
+function serializeTable(table: any, readonly = false) {
+  return {
+    id: table.id,
+    supplierId: table.supplierId,
+    name: table.name,
+    description: table.description ?? null,
+    active: table.active,
+    validFrom: table.validFrom ?? null,
+    validUntil: table.validUntil ?? null,
+    items: (table.items ?? []).map(serializeItem),
+    readonly,
+    createdAt: table.createdAt,
+    updatedAt: table.updatedAt,
+  }
+}
+
+function serializeSupplierForCompany(supplier: any, companyId: string) {
+  const isOwnSupplier = supplier.companyId === companyId
+  const hasCodeAccess = Boolean(supplier.businessAccesses?.length)
+  const isPublic = Boolean(supplier.publicListingEnabled)
+  const readonly = !isOwnSupplier
+  const accessMode = isOwnSupplier ? 'OWN' : hasCodeAccess ? 'CODE' : 'PUBLIC'
+  const visibleTables = readonly
+    ? (supplier.priceTables ?? []).filter((table: any) => table.active)
+    : supplier.priceTables ?? []
+
+  return {
+    id: supplier.id,
+    companyId: supplier.companyId,
+    supplierCompanyId: supplier.supplierCompanyId ?? null,
+    name: supplier.name,
+    document: readonly ? null : supplier.document ?? null,
+    contactName: supplier.contactName ?? null,
+    phone: supplier.phone ?? null,
+    email: supplier.email ?? null,
+    address: supplier.address ?? null,
+    notes: supplier.notes ?? null,
+    photoUrl: supplier.photoUrl ?? null,
+    photoData: supplier.photoData ?? null,
+    categories: supplier.categories ?? [],
+    active: supplier.active,
+    ordrCode: readonly ? null : supplier.ordrCode ?? null,
+    onlineEnabled: Boolean(supplier.onlineEnabled),
+    publicListingEnabled: Boolean(supplier.publicListingEnabled),
+    operatingHours: normalizeOperatingHours(supplier.operatingHours),
+    onlineStatus: computeOnlineStatus(supplier),
+    readonly,
+    canManage: isOwnSupplier,
+    isExternal: !isOwnSupplier,
+    accessMode,
+    isPublic,
+    hasCodeAccess,
+    priceTables: visibleTables.map((table: any) => serializeTable(table, readonly)),
+    createdAt: supplier.createdAt,
+    updatedAt: supplier.updatedAt,
+  }
+}
+
 async function assertSupplier(companyId: string, supplierId: string) {
   const supplier = await prisma.supplier.findFirst({ where: { id: supplierId, companyId } })
   if (!supplier) throw new Error('SUPPLIER_NOT_FOUND')
@@ -120,21 +267,82 @@ async function assertProductBelongsToCompany(companyId: string, productId: strin
   return product
 }
 
+function supplierVisibilityWhere(companyId: string): Prisma.SupplierWhereInput {
+  return {
+    OR: [
+      { companyId },
+      {
+        companyId: { not: companyId },
+        active: true,
+        supplierCompanyId: { not: null },
+        OR: [
+          { publicListingEnabled: true },
+          { businessAccesses: { some: { businessCompanyId: companyId } } },
+        ],
+      },
+    ],
+  }
+}
+
+function supplierIncludeForCompany(companyId: string) {
+  return {
+    ...SUPPLIER_INCLUDE,
+    businessAccesses: {
+      where: { businessCompanyId: companyId },
+      select: { id: true, codeUsed: true, createdAt: true },
+    },
+  }
+}
+
 export async function listSuppliers(companyId: string) {
-  return prisma.supplier.findMany({
-    where: { companyId },
-    include: SUPPLIER_INCLUDE,
-    orderBy: [{ active: 'desc' }, { name: 'asc' }],
+  const suppliers = await prisma.supplier.findMany({
+    where: supplierVisibilityWhere(companyId),
+    include: supplierIncludeForCompany(companyId),
+    orderBy: [{ active: 'desc' }, { publicListingEnabled: 'desc' }, { name: 'asc' }],
   })
+
+  return suppliers.map((supplier) => serializeSupplierForCompany(supplier, companyId))
 }
 
 export async function getSupplier(companyId: string, supplierId: string) {
   const supplier = await prisma.supplier.findFirst({
-    where: { id: supplierId, companyId },
-    include: SUPPLIER_INCLUDE,
+    where: { id: supplierId, AND: [supplierVisibilityWhere(companyId)] },
+    include: supplierIncludeForCompany(companyId),
   })
   if (!supplier) throw new Error('SUPPLIER_NOT_FOUND')
-  return supplier
+  return serializeSupplierForCompany(supplier, companyId)
+}
+
+export async function addSupplierAccessByCode(companyId: string, rawCode: string) {
+  const code = requiredText(rawCode, 'ORDR_CODE').toUpperCase().replace(/[^A-Z0-9]/g, '')
+
+  const supplier = await prisma.supplier.findFirst({
+    where: {
+      ordrCode: code,
+      active: true,
+      supplierCompanyId: { not: null },
+      companyId: { not: companyId },
+    },
+  })
+
+  if (!supplier) throw new Error('SUPPLIER_CODE_NOT_FOUND')
+
+  await prisma.supplierAccess.upsert({
+    where: {
+      businessCompanyId_supplierId: {
+        businessCompanyId: companyId,
+        supplierId: supplier.id,
+      },
+    },
+    create: {
+      businessCompanyId: companyId,
+      supplierId: supplier.id,
+      codeUsed: code,
+    },
+    update: { codeUsed: code },
+  })
+
+  return getSupplier(companyId, supplier.id)
 }
 
 export async function createSupplier(input: {
@@ -166,15 +374,12 @@ export async function createSupplier(input: {
       photoUrl: cleanText(input.photoUrl),
       photoData: cleanText(input.photoData),
       categories: parseCategories(input.categories),
-      ordrCode: await generateSupplierCode(),
-      priceTables: input.createDefaultTable === false ? undefined : {
-        create: { name: 'Tabela padrão' },
-      },
+      priceTables: input.createDefaultTable === false ? undefined : { create: { name: 'Tabela padrão' } },
     },
-    include: SUPPLIER_INCLUDE,
+    include: supplierIncludeForCompany(input.companyId),
   })
 
-  return supplier
+  return serializeSupplierForCompany(supplier, input.companyId)
 }
 
 export async function updateSupplier(input: {
@@ -194,7 +399,7 @@ export async function updateSupplier(input: {
 }) {
   await assertSupplier(input.companyId, input.supplierId)
 
-  return prisma.supplier.update({
+  const supplier = await prisma.supplier.update({
     where: { id: input.supplierId },
     data: {
       name: typeof input.name === 'string' ? requiredText(input.name, 'SUPPLIER_NAME') : undefined,
@@ -209,40 +414,31 @@ export async function updateSupplier(input: {
       categories: typeof input.categories === 'undefined' ? undefined : parseCategories(input.categories),
       active: typeof input.active === 'boolean' ? input.active : undefined,
     },
-    include: SUPPLIER_INCLUDE,
+    include: supplierIncludeForCompany(input.companyId),
   })
+
+  return serializeSupplierForCompany(supplier, input.companyId)
 }
 
 export async function deactivateSupplier(companyId: string, supplierId: string) {
   const supplier = await assertSupplier(companyId, supplierId)
-
   if (!supplier.active) return getSupplier(companyId, supplierId)
 
-  return prisma.supplier.update({
-    where: { id: supplierId },
-    data: { active: false },
-    include: SUPPLIER_INCLUDE,
-  })
+  await prisma.supplier.update({ where: { id: supplierId }, data: { active: false } })
+  return getSupplier(companyId, supplierId)
 }
 
 export async function reactivateSupplier(companyId: string, supplierId: string) {
   const supplier = await assertSupplier(companyId, supplierId)
-
   if (supplier.active) return getSupplier(companyId, supplierId)
 
-  return prisma.supplier.update({
-    where: { id: supplierId },
-    data: { active: true },
-    include: SUPPLIER_INCLUDE,
-  })
+  await prisma.supplier.update({ where: { id: supplierId }, data: { active: true } })
+  return getSupplier(companyId, supplierId)
 }
 
 export async function deleteInactiveSupplier(companyId: string, supplierId: string) {
   const supplier = await assertSupplier(companyId, supplierId)
-
-  if (supplier.active) {
-    throw new Error('SUPPLIER_MUST_BE_INACTIVE_TO_DELETE')
-  }
+  if (supplier.active) throw new Error('SUPPLIER_MUST_BE_INACTIVE_TO_DELETE')
 
   await prisma.supplier.delete({ where: { id: supplierId } })
   return { deleted: true, supplierId }
@@ -257,7 +453,7 @@ export async function createSupplierPriceTable(input: {
   validUntil?: string | null
 }) {
   await assertSupplier(input.companyId, input.supplierId)
-  const table = await prisma.supplierPriceTable.create({
+  await prisma.supplierPriceTable.create({
     data: {
       supplierId: input.supplierId,
       name: requiredText(input.name, 'PRICE_TABLE_NAME'),
@@ -310,6 +506,7 @@ export async function createSupplierPriceTableItem(input: {
   productId?: string | null
   itemName?: string | null
   sku?: string | null
+  category?: string | null
   unit?: StockUnitInput | null
   quantity?: number | string | null
   unitPrice: number | string
@@ -326,6 +523,7 @@ export async function createSupplierPriceTableItem(input: {
       productId,
       itemName: requiredText(input.itemName ?? product?.name, 'ITEM_NAME'),
       sku: cleanText(input.sku),
+      category: cleanText(input.category),
       unit: parseUnit(input.unit ?? product?.stockUnit ?? 'unit'),
       quantity: parseQuantity(input.quantity),
       unitPrice: parseMoney(input.unitPrice, 'UNIT_PRICE'),
@@ -344,6 +542,7 @@ export async function updateSupplierPriceTableItem(input: {
   productId?: string | null
   itemName?: string | null
   sku?: string | null
+  category?: string | null
   unit?: StockUnitInput | null
   quantity?: number | string | null
   unitPrice?: number | string
@@ -368,6 +567,7 @@ export async function updateSupplierPriceTableItem(input: {
           ? undefined
           : requiredText(input.itemName ?? product?.name ?? existing.itemName, 'ITEM_NAME'),
       sku: typeof input.sku === 'undefined' ? undefined : cleanText(input.sku),
+      category: typeof input.category === 'undefined' ? undefined : cleanText(input.category),
       unit: typeof input.unit === 'undefined' ? undefined : parseUnit(input.unit),
       quantity: typeof input.quantity === 'undefined' ? undefined : parseQuantity(input.quantity),
       unitPrice: typeof input.unitPrice === 'undefined' ? undefined : parseMoney(input.unitPrice, 'UNIT_PRICE'),

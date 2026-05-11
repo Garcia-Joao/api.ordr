@@ -99,6 +99,7 @@ model Company {
   buyRequests             BuyRequest[]
   productCostHistory      ProductCostHistory[]
   suppliers               Supplier[] @relation("CompanySuppliers")
+  supplierAccesses        SupplierAccess[] @relation("BusinessSupplierAccesses")
   supplierPortalProfile   Supplier? @relation("SupplierCompanyProfile")
 
   testSourceCompanyId String?   @unique
@@ -854,12 +855,14 @@ model Supplier {
   supplierCompanyId String?  @unique
   supplierCompany   Company? @relation("SupplierCompanyProfile", fields: [supplierCompanyId], references: [id], onDelete: SetNull)
   ordrCode          String?  @unique
-  onlineEnabled     Boolean @default(true)
-  operatingHours    Json?
+  onlineEnabled        Boolean @default(true)
+  publicListingEnabled Boolean @default(false)
+  operatingHours       Json?
 
   active    Boolean @default(true)
 
-  priceTables SupplierPriceTable[]
+  priceTables      SupplierPriceTable[]
+  businessAccesses SupplierAccess[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -870,6 +873,23 @@ model Supplier {
   @@index([name])
   @@index([supplierCompanyId])
   @@index([ordrCode])
+  @@index([publicListingEnabled])
+}
+
+model SupplierAccess {
+  id                String   @id @default(cuid())
+  businessCompanyId String
+  businessCompany   Company  @relation("BusinessSupplierAccesses", fields: [businessCompanyId], references: [id], onDelete: Cascade)
+
+  supplierId String
+  supplier   Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+
+  codeUsed  String?
+  createdAt DateTime @default(now())
+
+  @@unique([businessCompanyId, supplierId])
+  @@index([businessCompanyId])
+  @@index([supplierId])
 }
 
 model SupplierPriceTable {
