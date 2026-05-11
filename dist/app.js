@@ -15,6 +15,8 @@ const internal_customers_routes_1 = require("./routes/internal-customers.routes"
 const sales_environments_routes_1 = __importDefault(require("./routes/sales-environments.routes"));
 const stock_routes_1 = __importDefault(require("./routes/stock.routes"));
 const printers_routes_1 = __importDefault(require("./routes/printers.routes"));
+const devices_routes_1 = __importDefault(require("./routes/devices.routes"));
+const print_jobs_routes_1 = __importDefault(require("./routes/print-jobs.routes"));
 const people_routes_1 = require("./routes/people.routes");
 const events_routes_1 = __importDefault(require("./routes/events.routes"));
 const customers_routes_1 = __importDefault(require("./routes/customers.routes"));
@@ -24,9 +26,8 @@ const reports_routes_1 = __importDefault(require("./routes/reports.routes"));
 const product_cost_history_routes_1 = __importDefault(require("./routes/product-cost-history.routes"));
 const access_routes_1 = __importDefault(require("./routes/access.routes"));
 const audit_routes_1 = __importDefault(require("./routes/audit.routes"));
-const devices_routes_1 = __importDefault(require("./routes/devices.routes"));
-const print_jobs_routes_1 = __importDefault(require("./routes/print-jobs.routes"));
 const admin_routes_1 = __importDefault(require("./routes/admin.routes"));
+const version_routes_1 = __importDefault(require("./routes/version.routes"));
 const prisma_1 = require("./lib/prisma");
 const app = (0, express_1.default)();
 const allowedOrigins = [
@@ -34,10 +35,10 @@ const allowedOrigins = [
     'http://localhost:3001',
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
-    'http://localhost:3020',
-    'http://127.0.0.1:3020',
     'http://192.168.15.4:3001',
     'https://panelordr.com.br',
+    'https://www.panelordr.com.br',
+    'https://app.panelordr.com.br',
     'https://admin.panelordr.com.br',
     process.env.FRONTEND_URL,
     process.env.FRONTEND_LAN_URL,
@@ -59,7 +60,12 @@ app.use((0, cors_1.default)({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-company-id', 'x-device-id'],
+    allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'x-company-id',
+        'x-device-id',
+    ],
 }));
 app.use((0, cookie_parser_1.default)());
 app.use(express_1.default.json({ limit: '10mb' }));
@@ -80,6 +86,13 @@ app.get('/health', async (_req, res) => {
         });
     }
 });
+app.get('/auth/me', (req, res, next) => {
+    if (!req.cookies?.auth && !req.headers.authorization) {
+        return res.status(401).json({ error: 'UNAUTHORIZED' });
+    }
+    return next();
+});
+app.use('/versionCheck', version_routes_1.default);
 app.use('/admin', admin_routes_1.default);
 app.use('/auth', auth_routes_1.default);
 app.use('/products', products_routes_1.default);
@@ -90,6 +103,8 @@ app.use('/internal-customers', internal_customers_routes_1.internalCustomersRout
 app.use('/sales-environments', sales_environments_routes_1.default);
 app.use('/stock', stock_routes_1.default);
 app.use('/printers', printers_routes_1.default);
+app.use('/devices', devices_routes_1.default);
+app.use('/print-jobs', print_jobs_routes_1.default);
 app.use('/people', people_routes_1.peopleRoutes);
 app.use('/events', events_routes_1.default);
 app.use('/customers', customers_routes_1.default);
@@ -99,6 +114,4 @@ app.use('/reports', reports_routes_1.default);
 app.use('/product-cost-history', product_cost_history_routes_1.default);
 app.use('/access', access_routes_1.default);
 app.use('/audit', audit_routes_1.default);
-app.use('/devices', devices_routes_1.default);
-app.use('/print-jobs', print_jobs_routes_1.default);
 exports.default = app;

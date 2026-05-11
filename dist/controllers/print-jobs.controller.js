@@ -38,6 +38,7 @@ exports.createOrderPrintJobs = createOrderPrintJobs;
 exports.listTerminalPendingJobs = listTerminalPendingJobs;
 exports.claimPrintJob = claimPrintJob;
 exports.updatePrintJobStatus = updatePrintJobStatus;
+exports.deletePrintJob = deletePrintJob;
 const service = __importStar(require("../services/print-jobs.service"));
 function param(value) {
     return Array.isArray(value) ? value[0] : value || '';
@@ -127,6 +128,23 @@ async function updatePrintJobStatus(req, res) {
     }
     catch (error) {
         console.error('update print job status error:', error);
+        return handleError(res, error);
+    }
+}
+async function deletePrintJob(req, res) {
+    try {
+        const companyId = req.user?.companyId;
+        const terminalDeviceId = String(req.body?.terminalDeviceId ?? req.query?.terminalDeviceId ?? '');
+        const jobId = param(req.params.id);
+        if (!companyId)
+            return res.status(401).json({ error: 'Unauthorized' });
+        if (!terminalDeviceId)
+            return res.status(400).json({ error: 'terminalDeviceId é obrigatório.' });
+        const job = await service.deletePrintJob(companyId, terminalDeviceId, jobId);
+        return res.json({ job });
+    }
+    catch (error) {
+        console.error('delete print job error:', error);
         return handleError(res, error);
     }
 }

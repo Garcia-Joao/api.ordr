@@ -188,7 +188,10 @@ async function getPrinterSettings(req, res) {
 }
 async function savePrinterSettings(req, res) {
     try {
-        const settings = await printersService.savePrinterSettings(req.body);
+        const companyId = req.user?.companyId;
+        if (!companyId)
+            return res.status(401).json({ error: 'Unauthorized' });
+        const settings = await printersService.savePrinterSettings(companyId, req.body);
         return res.json(settings);
     }
     catch (error) {

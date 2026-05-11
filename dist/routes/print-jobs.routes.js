@@ -9,4 +9,5 @@ router.post('/orders/:orderId', auth_middleware_1.requireAuth, print_jobs_contro
 router.get('/terminal/pending', auth_middleware_1.requireAuth, print_jobs_controller_1.listTerminalPendingJobs);
 router.post('/:id/claim', auth_middleware_1.requireAuth, print_jobs_controller_1.claimPrintJob);
 router.patch('/:id/status', auth_middleware_1.requireAuth, print_jobs_controller_1.updatePrintJobStatus);
+router.delete('/:id', auth_middleware_1.requireAuth, print_jobs_controller_1.deletePrintJob);
 exports.default = router;

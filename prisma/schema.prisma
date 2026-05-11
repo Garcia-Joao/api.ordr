@@ -62,6 +62,7 @@ enum PrintJobStatus {
 
 enum PrintJobType {
   ORDER_TICKET
+  BUY_LIST
   TEST
 }
 
@@ -109,6 +110,7 @@ model Company {
   printPorts        PrintPort[]
   printJobs         PrintJob[]
   printPortBindings PrintPortBinding[]
+  printTemplates    PrintTemplate[]
 }
 
 model User {
@@ -1064,6 +1066,22 @@ model Device {
   @@index([isPrintTerminal])
 }
 
+
+
+model PrintTemplate {
+  id        String   @id @default(cuid())
+  companyId String
+  kind      String
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, kind])
+  @@index([companyId])
+  @@index([kind])
+}
 
 model PrintPort {
   id                 String   @id @default(cuid())

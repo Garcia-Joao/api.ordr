@@ -141,9 +141,12 @@ export async function getPrinterSettings(req: AuthRequest, res: Response) {
   }
 }
 
-export async function savePrinterSettings(req: Request, res: Response) {
+export async function savePrinterSettings(req: AuthRequest, res: Response) {
   try {
-    const settings = await printersService.savePrinterSettings(req.body)
+    const companyId = req.user?.companyId
+    if (!companyId) return res.status(401).json({ error: 'Unauthorized' })
+
+    const settings = await printersService.savePrinterSettings(companyId, req.body)
     return res.json(settings)
   } catch (error: any) {
     console.error('savePrinterSettings error:', error)

@@ -8,14 +8,18 @@ exports.updatePrintPort = updatePrintPort;
 exports.deletePrintPort = deletePrintPort;
 exports.bindPrintPort = bindPrintPort;
 exports.setPrintPortBindings = setPrintPortBindings;
+exports.getPrintTemplate = getPrintTemplate;
+exports.getPrintTemplates = getPrintTemplates;
+exports.savePrintTemplate = savePrintTemplate;
+exports.savePrintTemplates = savePrintTemplates;
 exports.getPrinterSettings = getPrinterSettings;
 exports.savePrinterSettings = savePrinterSettings;
+exports.getOrderTicketTemplate = getOrderTicketTemplate;
 exports.testPrinter = testPrinter;
 exports.getSelectedOrderPrinter = getSelectedOrderPrinter;
-exports.getOrderTicketTemplate = getOrderTicketTemplate;
 exports.getSelectedOrderPrinterName = getSelectedOrderPrinterName;
 const prisma_1 = require("../lib/prisma");
-const ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
+const ONLINE_THRESHOLD_MS = 45 * 1000;
 const { listGenericTextPrinters, printRawThermalText, } = require('../../printer.js');
 function cleanText(value) {
     const text = String(value ?? '').trim();
@@ -231,32 +235,38 @@ async function setPrintPortBindings(companyId, portId, input) {
     const updated = await prisma_1.prisma.printPort.findUnique({ where: { id: portId }, include: portInclude });
     return normalizePort(updated);
 }
-async function getPrinterSettings(companyId) {
-    if (!companyId) {
-        return {
-            ports: [],
-            terminals: [],
-            printers: [],
-            orderPrinterId: null,
-            orderTicketTemplate: defaultTemplate,
-        };
-    }
-    const [ports, terminals] = await Promise.all([
-        listPrintPorts(companyId),
-        getPrintTerminals(companyId),
-    ]);
-    return {
-        ports,
-        terminals,
-        printers: [],
-        orderPrinterId: null,
-        orderTicketTemplate: defaultTemplate,
-    };
-}
-async function savePrinterSettings(input) {
-    return input;
-}
-const defaultTemplate = {
+const defaultOrderTicketTemplate = {
+    enabledFields: {
+        logo: true,
+        portName: true,
+        orderId: true,
+        comanda: true,
+        comandaName: true,
+        observation: true,
+        items: true,
+        variations: true,
+        notes: true,
+        date: true,
+    },
+    headerText: '*** ORDR ***',
+    footerText: '',
+};
+const defaultBuyListTemplate = {
+    enabledFields: {
+        requestTitle: true,
+        requestId: true,
+        supplierName: true,
+        eventName: true,
+        notes: true,
+        date: true,
+        checklistBoxes: true,
+        categories: true,
+        itemNotes: true,
+    },
+    headerText: '*** LISTA DE COMPRAS ***',
+    footerText: '',
+};
+const legacyOrderTemplate = {
     showLogo: true,
     showOrderId: true,
     showDate: true,
@@ -266,6 +276,115 @@ const defaultTemplate = {
     headerText: '*** ORDR ***',
     footerText: '',
 };
+function getDefaultTemplate(kind) {
+    return kind === 'BUY_LIST' ? defaultBuyListTemplate : defaultOrderTicketTemplate;
+}
+function sanitizeTemplateConfig(kind, input) {
+    const defaults = getDefaultTemplate(kind);
+    const enabledFields = { ...defaults.enabledFields };
+    if (input?.enabledFields && typeof input.enabledFields === 'object') {
+        for (const key of Object.keys(enabledFields)) {
+            if (input.enabledFields[key] !== undefined) {
+                enabledFields[key] = Boolean(input.enabledFields[key]);
+            }
+        }
+    }
+    return {
+        enabledFields,
+        headerText: cleanText(input?.headerText) ?? defaults.headerText,
+        footerText: cleanText(input?.footerText) ?? '',
+    };
+}
+function normalizeTemplateRecord(kind, record) {
+    return {
+        kind,
+        config: sanitizeTemplateConfig(kind, record?.config),
+        updatedAt: record?.updatedAt?.toISOString?.() ?? record?.updatedAt ?? null,
+    };
+}
+async function getPrintTemplate(companyId, kind) {
+    const record = await prisma_1.prisma.printTemplate.findUnique({
+        where: { companyId_kind: { companyId, kind } },
+    });
+    return normalizeTemplateRecord(kind, record);
+}
+async function getPrintTemplates(companyId) {
+    const templates = await prisma_1.prisma.printTemplate.findMany({ where: { companyId } });
+    const byKind = new Map(templates.map((template) => [template.kind, template]));
+    return {
+        orderTicket: normalizeTemplateRecord('ORDER_TICKET', byKind.get('ORDER_TICKET')),
+        buyList: normalizeTemplateRecord('BUY_LIST', byKind.get('BUY_LIST')),
+    };
+}
+async function savePrintTemplate(companyId, kind, config) {
+    const sanitized = sanitizeTemplateConfig(kind, config);
+    const template = await prisma_1.prisma.printTemplate.upsert({
+        where: { companyId_kind: { companyId, kind } },
+        create: { companyId, kind, config: sanitized },
+        update: { config: sanitized },
+    });
+    return normalizeTemplateRecord(kind, template);
+}
+async function savePrintTemplates(companyId, input) {
+    const [orderTicket, buyList] = await Promise.all([
+        input?.orderTicket ? savePrintTemplate(companyId, 'ORDER_TICKET', input.orderTicket.config ?? input.orderTicket) : getPrintTemplate(companyId, 'ORDER_TICKET'),
+        input?.buyList ? savePrintTemplate(companyId, 'BUY_LIST', input.buyList.config ?? input.buyList) : getPrintTemplate(companyId, 'BUY_LIST'),
+    ]);
+    return { orderTicket, buyList };
+}
+async function getPrinterSettings(companyId) {
+    if (!companyId) {
+        return {
+            ports: [],
+            terminals: [],
+            printers: [],
+            orderPrinterId: null,
+            orderTicketTemplate: legacyOrderTemplate,
+            printTemplates: {
+                orderTicket: normalizeTemplateRecord('ORDER_TICKET', null),
+                buyList: normalizeTemplateRecord('BUY_LIST', null),
+            },
+        };
+    }
+    const [ports, terminals, printTemplates] = await Promise.all([
+        listPrintPorts(companyId),
+        getPrintTerminals(companyId),
+        getPrintTemplates(companyId),
+    ]);
+    return {
+        ports,
+        terminals,
+        printers: [],
+        orderPrinterId: null,
+        orderTicketTemplate: legacyOrderTemplate,
+        printTemplates,
+    };
+}
+async function savePrinterSettings(companyId, input) {
+    if (!companyId)
+        throw new Error('COMPANY_REQUIRED');
+    const printTemplates = await savePrintTemplates(companyId, input?.printTemplates ?? input);
+    return {
+        ...(await getPrinterSettings(companyId)),
+        printTemplates,
+    };
+}
+async function getOrderTicketTemplate(companyId) {
+    if (!companyId)
+        return legacyOrderTemplate;
+    const template = await getPrintTemplate(companyId, 'ORDER_TICKET');
+    const config = template.config;
+    return {
+        showLogo: config.enabledFields.logo,
+        showOrderId: config.enabledFields.orderId,
+        showDate: config.enabledFields.date,
+        showComandaName: config.enabledFields.comandaName,
+        showVariations: config.enabledFields.variations,
+        showNotes: config.enabledFields.notes,
+        headerText: config.headerText,
+        footerText: config.footerText,
+    };
+}
 async function testPrinter(printerNameFromRequest) {
     const printerName = printerNameFromRequest?.trim();
     if (!printerName)
@@ -287,9 +406,6 @@ async function testPrinter(printerNameFromRequest) {
 }
 async function getSelectedOrderPrinter() {
     return null;
-}
-async function getOrderTicketTemplate() {
-    return defaultTemplate;
 }
 async function getSelectedOrderPrinterName() {
     return null;

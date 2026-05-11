@@ -6,8 +6,10 @@ exports.createBuyRequestShoppingListPrintJobs = createBuyRequestShoppingListPrin
 exports.listTerminalPendingJobs = listTerminalPendingJobs;
 exports.claimPrintJob = claimPrintJob;
 exports.updatePrintJobStatus = updatePrintJobStatus;
+exports.deletePrintJob = deletePrintJob;
 const prisma_1 = require("../lib/prisma");
-const ONLINE_THRESHOLD_MS = 2 * 60 * 1000;
+const printers_service_1 = require("./printers.service");
+const ONLINE_THRESHOLD_MS = 45 * 1000;
 function isTerminalOnline(device) {
     if (!device?.lastSeenAt)
         return false;
@@ -80,8 +82,57 @@ async function createPrintJob(input) {
     });
     return normalizeJob(job);
 }
-function buildOrderPayload(order, port, items) {
+function getOrderItemPrintKey(item) {
+    const optionIds = (item.variations ?? [])
+        .flatMap((selection) => (selection.options ?? []).map((selected) => selected.optionId))
+        .filter(Boolean)
+        .sort();
+    return `${item.productId}-${JSON.stringify(optionIds)}`;
+}
+function normalizeOrderItemForPayload(item, quantityOverride) {
+    const quantity = quantityOverride ?? Number(item.quantity ?? 1);
+    const unitPrice = Number(item.unitPrice ?? 0);
     return {
+        name: item.product?.name ?? 'Item',
+        quantity,
+        unitPrice,
+        totalPrice: Number((unitPrice * quantity).toFixed(2)),
+        notes: item.notes ?? null,
+        productId: item.productId,
+        categoryName: item.product?.category?.name ?? null,
+        variations: (item.variations ?? []).flatMap((selection) => (selection.options ?? []).map((option) => option.option?.name).filter(Boolean)),
+    };
+}
+function buildSeparateTicketsForItem(item) {
+    const quantity = Number(item.quantity ?? 1);
+    const safeQuantity = Number.isFinite(quantity) && quantity > 0 ? Math.floor(quantity) : 1;
+    return Array.from({ length: Math.max(1, safeQuantity) }, () => ({
+        mode: 'SEPARATE',
+        items: [normalizeOrderItemForPayload(item, 1)],
+    }));
+}
+function buildTicketsForPortItems(itemsWithModes) {
+    const tickets = [];
+    const groupedItems = [];
+    for (const { item, mode } of itemsWithModes) {
+        if (mode === 'GROUPED') {
+            groupedItems.push(normalizeOrderItemForPayload(item));
+            continue;
+        }
+        tickets.push(...buildSeparateTicketsForItem(item));
+    }
+    if (groupedItems.length > 0) {
+        tickets.unshift({
+            mode: 'GROUPED',
+            items: groupedItems,
+        });
+    }
+    return tickets;
+}
+function buildOrderPayload(order, port, tickets, template) {
+    const flattenedItems = tickets.flatMap((ticket) => ticket.items ?? []);
+    return {
+        kind: 'ORDER_TICKET',
         title: 'Pedido',
         orderId: order.id,
         comanda: order.comanda,
@@ -89,19 +140,13 @@ function buildOrderPayload(order, port, items) {
         observation: order.observation ?? null,
         createdAt: order.createdAt,
         port: port ? { id: port.id, name: port.name } : null,
-        items: items.map((item) => ({
-            name: item.product?.name ?? 'Item',
-            quantity: item.quantity,
-            unitPrice: Number(item.unitPrice ?? 0),
-            totalPrice: Number(item.totalPrice ?? 0),
-            notes: item.notes ?? null,
-            productId: item.productId,
-            categoryName: item.product?.category?.name ?? null,
-            variations: (item.variations ?? []).flatMap((selection) => (selection.options ?? []).map((option) => option.option?.name).filter(Boolean)),
-        })),
+        tickets,
+        items: flattenedItems,
+        template: template?.orderTicket?.config ?? null,
     };
 }
-async function createOrderPrintJobs(companyId, orderId) {
+async function createOrderPrintJobs(companyId, orderId, options = {}) {
+    const printTemplates = await (0, printers_service_1.getPrintTemplates)(companyId);
     const order = await prisma_1.prisma.order.findFirst({
         where: { id: orderId, companyId },
         include: {
@@ -126,8 +171,13 @@ async function createOrderPrintJobs(companyId, orderId) {
         const productPortId = item.product?.printPortId ?? null;
         const categoryPortId = item.product?.category?.printPortId ?? null;
         const resolvedPortId = productPortId || categoryPortId || defaultPort?.id || 'unassigned';
+        const itemKey = getOrderItemPrintKey(item);
+        const mode = options.itemPrintModes?.get(itemKey) ?? 'SEPARATE';
         portIds.add(resolvedPortId);
-        itemsByPort.set(resolvedPortId, [...(itemsByPort.get(resolvedPortId) ?? []), item]);
+        itemsByPort.set(resolvedPortId, [
+            ...(itemsByPort.get(resolvedPortId) ?? []),
+            { item, mode },
+        ]);
     }
     const ports = await prisma_1.prisma.printPort.findMany({
         where: { id: { in: Array.from(portIds).filter((id) => id !== 'unassigned') }, companyId, active: true },
@@ -135,8 +185,9 @@ async function createOrderPrintJobs(companyId, orderId) {
     });
     const portsById = new Map(ports.map((port) => [port.id, port]));
     const jobs = [];
-    for (const [portId, items] of itemsByPort.entries()) {
+    for (const [portId, itemsWithModes] of itemsByPort.entries()) {
         const port = portsById.get(portId) ?? null;
+        const tickets = buildTicketsForPortItems(itemsWithModes);
         const bindings = (port?.bindings ?? []).filter((binding) => binding.terminalDevice?.printTerminalEnabled &&
             binding.terminalDevice?.clientType === 'ELECTRON' &&
             isTerminalOnline(binding.terminalDevice));
@@ -149,7 +200,7 @@ async function createOrderPrintJobs(companyId, orderId) {
                     terminalDeviceId: null,
                     status: 'FAILED',
                     errorMessage: port ? 'PRINT_PORT_NOT_BOUND' : 'PRINT_PORT_NOT_FOUND',
-                    payload: buildOrderPayload(order, port, items),
+                    payload: buildOrderPayload(order, port, tickets, printTemplates),
                 },
                 include: { port: { include: { bindings: true } }, order: true },
             }));
@@ -165,7 +216,7 @@ async function createOrderPrintJobs(companyId, orderId) {
                     terminalDeviceId,
                     status: 'PENDING',
                     errorMessage: null,
-                    payload: buildOrderPayload(order, port, items),
+                    payload: buildOrderPayload(order, port, tickets, printTemplates),
                 },
                 include: { port: { include: { bindings: true } }, order: true },
             }));
@@ -173,16 +224,22 @@ async function createOrderPrintJobs(companyId, orderId) {
     }
     return jobs.map(normalizeJob);
 }
+function normalizeUnitLabel(unit) {
+    if (!unit || unit === 'unit')
+        return '';
+    if (unit === 'g')
+        return 'gr';
+    return unit;
+}
 function formatChecklistQuantity(value, unit) {
     const formatted = Number(value ?? 0).toLocaleString('pt-BR', {
         minimumFractionDigits: 0,
-        maximumFractionDigits: 2,
+        maximumFractionDigits: 3,
     });
-    if (!unit || unit === 'unit')
-        return formatted;
-    return `${formatted} ${unit}`;
+    const unitLabel = normalizeUnitLabel(unit);
+    return unitLabel ? `${formatted}${unitLabel}` : formatted;
 }
-function buildBuyListPayload(request, port) {
+function buildBuyListPayload(request, port, template) {
     return {
         kind: 'BUY_LIST',
         title: 'Lista de Compras',
@@ -190,12 +247,16 @@ function buildBuyListPayload(request, port) {
         buyRequestTitle: request.title?.trim() || 'Compra',
         supplierName: request.supplierName?.trim() || null,
         notes: request.notes?.trim() || null,
+        eventName: request.eventDate?.title ?? null,
         createdAt: new Date().toISOString(),
+        requestCreatedAt: request.createdAt,
         port: port ? { id: port.id, name: port.name } : null,
+        template: template?.buyList?.config ?? null,
         items: (request.items ?? []).map((item) => ({
             name: item.product?.name ?? 'Item',
             productId: item.productId,
             quantity: Number(item.requestedQuantity ?? 0),
+            unit: item.product?.stockUnit ?? 'unit',
             quantityLabel: formatChecklistQuantity(Number(item.requestedQuantity ?? 0), item.product?.stockUnit ?? 'unit'),
             categoryName: item.product?.category?.name ?? null,
             notes: item.notes ?? null,
@@ -204,12 +265,14 @@ function buildBuyListPayload(request, port) {
     };
 }
 async function createBuyRequestShoppingListPrintJobs(input) {
+    const printTemplates = await (0, printers_service_1.getPrintTemplates)(input.companyId);
     const request = await prisma_1.prisma.buyRequest.findFirst({
         where: {
             id: input.buyRequestId,
             companyId: input.companyId,
         },
         include: {
+            eventDate: true,
             items: {
                 include: {
                     product: {
@@ -262,10 +325,10 @@ async function createBuyRequestShoppingListPrintJobs(input) {
                 orderId: null,
                 portId: null,
                 terminalDeviceId: null,
-                type: 'TEST',
+                type: 'BUY_LIST',
                 status: 'FAILED',
                 errorMessage: 'PRINT_PORT_NOT_FOUND',
-                payload: buildBuyListPayload(request, null),
+                payload: buildBuyListPayload(request, null, printTemplates),
             },
             include: { port: { include: { bindings: true } }, order: true },
         });
@@ -281,10 +344,10 @@ async function createBuyRequestShoppingListPrintJobs(input) {
                 orderId: null,
                 portId: port.id,
                 terminalDeviceId: null,
-                type: 'TEST',
+                type: 'BUY_LIST',
                 status: 'FAILED',
                 errorMessage: 'PRINT_PORT_NOT_BOUND',
-                payload: buildBuyListPayload(request, port),
+                payload: buildBuyListPayload(request, port, printTemplates),
             },
             include: { port: { include: { bindings: true } }, order: true },
         });
@@ -299,10 +362,10 @@ async function createBuyRequestShoppingListPrintJobs(input) {
                 orderId: null,
                 portId: port.id,
                 terminalDeviceId,
-                type: 'TEST',
+                type: 'BUY_LIST',
                 status: 'PENDING',
                 errorMessage: null,
-                payload: buildBuyListPayload(request, port),
+                payload: buildBuyListPayload(request, port, printTemplates),
             },
             include: { port: { include: { bindings: true } }, order: true },
         }));
@@ -351,6 +414,13 @@ async function updatePrintJobStatus(companyId, terminalDeviceId, jobId, status, 
     const job = await prisma_1.prisma.printJob.findFirst({ where: { id: jobId, companyId, terminalDeviceId } });
     if (!job)
         throw new Error('PRINT_JOB_NOT_FOUND');
+    if (status === 'PRINTED') {
+        const deleted = await prisma_1.prisma.printJob.delete({
+            where: { id: jobId },
+            include: { port: { include: { bindings: true } }, order: true },
+        });
+        return normalizeJob({ ...deleted, status: 'PRINTED', printedAt: new Date() });
+    }
     const now = new Date();
     const updated = await prisma_1.prisma.printJob.update({
         where: { id: jobId },
@@ -358,10 +428,24 @@ async function updatePrintJobStatus(companyId, terminalDeviceId, jobId, status, 
             status,
             errorMessage: errorMessage ?? null,
             ...(status === 'PRINTING' ? { startedAt: now } : {}),
-            ...(status === 'PRINTED' ? { printedAt: now } : {}),
             ...(status === 'FAILED' ? { failedAt: now } : {}),
         },
         include: { port: { include: { bindings: true } }, order: true },
     });
     return normalizeJob(updated);
+}
+async function deletePrintJob(companyId, terminalDeviceId, jobId) {
+    const job = await prisma_1.prisma.printJob.findFirst({
+        where: {
+            id: jobId,
+            companyId,
+            terminalDeviceId,
+            status: { in: ['PENDING', 'CLAIMED', 'FAILED', 'CANCELLED'] },
+        },
+        include: { port: { include: { bindings: true } }, order: true },
+    });
+    if (!job)
+        throw new Error('PRINT_JOB_NOT_FOUND');
+    await prisma_1.prisma.printJob.delete({ where: { id: jobId } });
+    return normalizeJob({ ...job, status: 'CANCELLED' });
 }

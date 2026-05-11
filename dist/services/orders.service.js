@@ -486,6 +486,19 @@ async function paySelectedInternalCustomerOrders(input) {
     });
     return { ok: true, paidCount: pendingOrders.length };
 }
+function getInputOrderItemPrintKey(item) {
+    const optionIds = (item.variations ?? [])
+        .flatMap((variation) => variation.options?.map((option) => option.optionId) ?? [])
+        .sort();
+    return `${item.productId}-${JSON.stringify(optionIds)}`;
+}
+function buildInputItemPrintModes(items) {
+    const modes = new Map();
+    for (const item of items) {
+        modes.set(getInputOrderItemPrintKey(item), item.printMode ?? 'SEPARATE');
+    }
+    return modes;
+}
 async function createOrder(data, userId) {
     if (!data.companyId?.trim()) {
         throw new Error('ORDER_COMPANY_ID_REQUIRED');
@@ -693,7 +706,9 @@ async function createOrder(data, userId) {
     });
     let printJobs = [];
     try {
-        printJobs = await (0, print_jobs_service_1.createOrderPrintJobs)(order.companyId, order.id);
+        printJobs = await (0, print_jobs_service_1.createOrderPrintJobs)(order.companyId, order.id, {
+            itemPrintModes: buildInputItemPrintModes(data.orderItems),
+        });
         console.log('[ORDER PRINT JOBS] Created successfully', {
             orderId: order.id,
             companyId: order.companyId,

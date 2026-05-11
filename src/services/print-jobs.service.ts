@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma'
+import { getPrintTemplates } from './printers.service'
 
 const ONLINE_THRESHOLD_MS = 45 * 1000
 
@@ -8,7 +9,7 @@ type CreatePrintJobInput = {
   companyId: string
   orderId?: string | null
   portId?: string | null
-  type?: 'ORDER_TICKET' | 'TEST'
+  type?: 'ORDER_TICKET' | 'BUY_LIST' | 'TEST'
   payload: unknown
 }
 
@@ -160,7 +161,7 @@ function buildTicketsForPortItems(itemsWithModes: Array<{ item: any; mode: Print
   return tickets
 }
 
-function buildOrderPayload(order: any, port: any, tickets: any[]) {
+function buildOrderPayload(order: any, port: any, tickets: any[], template?: any) {
   const flattenedItems = tickets.flatMap((ticket) => ticket.items ?? [])
 
   return {
@@ -174,6 +175,7 @@ function buildOrderPayload(order: any, port: any, tickets: any[]) {
     port: port ? { id: port.id, name: port.name } : null,
     tickets,
     items: flattenedItems,
+    template: template?.orderTicket?.config ?? null,
   }
 }
 
@@ -182,6 +184,8 @@ export async function createOrderPrintJobs(
   orderId: string,
   options: CreateOrderPrintJobsOptions = {}
 ) {
+  const printTemplates = await getPrintTemplates(companyId)
+
   const order = await prisma.order.findFirst({
     where: { id: orderId, companyId },
     include: {
@@ -245,7 +249,7 @@ export async function createOrderPrintJobs(
           terminalDeviceId: null,
           status: 'FAILED',
           errorMessage: port ? 'PRINT_PORT_NOT_BOUND' : 'PRINT_PORT_NOT_FOUND',
-          payload: buildOrderPayload(order, port, tickets) as any,
+          payload: buildOrderPayload(order, port, tickets, printTemplates) as any,
         },
         include: { port: { include: { bindings: true } }, order: true },
       }))
@@ -263,7 +267,7 @@ export async function createOrderPrintJobs(
           terminalDeviceId,
           status: 'PENDING',
           errorMessage: null,
-          payload: buildOrderPayload(order, port, tickets) as any,
+          payload: buildOrderPayload(order, port, tickets, printTemplates) as any,
         },
         include: { port: { include: { bindings: true } }, order: true },
       }))
@@ -274,17 +278,23 @@ export async function createOrderPrintJobs(
 }
 
 
+function normalizeUnitLabel(unit?: string | null) {
+  if (!unit || unit === 'unit') return ''
+  if (unit === 'g') return 'gr'
+  return unit
+}
+
 function formatChecklistQuantity(value: number | string | null | undefined, unit?: string | null) {
   const formatted = Number(value ?? 0).toLocaleString('pt-BR', {
     minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
+    maximumFractionDigits: 3,
   })
 
-  if (!unit || unit === 'unit') return formatted
-  return `${formatted} ${unit}`
+  const unitLabel = normalizeUnitLabel(unit)
+  return unitLabel ? `${formatted}${unitLabel}` : formatted
 }
 
-function buildBuyListPayload(request: any, port: any) {
+function buildBuyListPayload(request: any, port: any, template?: any) {
   return {
     kind: 'BUY_LIST',
     title: 'Lista de Compras',
@@ -292,12 +302,16 @@ function buildBuyListPayload(request: any, port: any) {
     buyRequestTitle: request.title?.trim() || 'Compra',
     supplierName: request.supplierName?.trim() || null,
     notes: request.notes?.trim() || null,
+    eventName: request.eventDate?.title ?? null,
     createdAt: new Date().toISOString(),
+    requestCreatedAt: request.createdAt,
     port: port ? { id: port.id, name: port.name } : null,
+    template: template?.buyList?.config ?? null,
     items: (request.items ?? []).map((item: any) => ({
       name: item.product?.name ?? 'Item',
       productId: item.productId,
       quantity: Number(item.requestedQuantity ?? 0),
+      unit: item.product?.stockUnit ?? 'unit',
       quantityLabel: formatChecklistQuantity(
         Number(item.requestedQuantity ?? 0),
         item.product?.stockUnit ?? 'unit'
@@ -314,12 +328,15 @@ export async function createBuyRequestShoppingListPrintJobs(input: {
   buyRequestId: string
   portId?: string | null
 }) {
+  const printTemplates = await getPrintTemplates(input.companyId)
+
   const request = await prisma.buyRequest.findFirst({
     where: {
       id: input.buyRequestId,
       companyId: input.companyId,
     },
     include: {
+      eventDate: true,
       items: {
         include: {
           product: {
@@ -374,10 +391,10 @@ export async function createBuyRequestShoppingListPrintJobs(input: {
         orderId: null,
         portId: null,
         terminalDeviceId: null,
-        type: 'TEST',
+        type: 'BUY_LIST',
         status: 'FAILED',
         errorMessage: 'PRINT_PORT_NOT_FOUND',
-        payload: buildBuyListPayload(request, null) as any,
+        payload: buildBuyListPayload(request, null, printTemplates) as any,
       },
       include: { port: { include: { bindings: true } }, order: true },
     })
@@ -398,10 +415,10 @@ export async function createBuyRequestShoppingListPrintJobs(input: {
         orderId: null,
         portId: port.id,
         terminalDeviceId: null,
-        type: 'TEST',
+        type: 'BUY_LIST',
         status: 'FAILED',
         errorMessage: 'PRINT_PORT_NOT_BOUND',
-        payload: buildBuyListPayload(request, port) as any,
+        payload: buildBuyListPayload(request, port, printTemplates) as any,
       },
       include: { port: { include: { bindings: true } }, order: true },
     })
@@ -422,10 +439,10 @@ export async function createBuyRequestShoppingListPrintJobs(input: {
         orderId: null,
         portId: port.id,
         terminalDeviceId,
-        type: 'TEST',
+        type: 'BUY_LIST',
         status: 'PENDING',
         errorMessage: null,
-        payload: buildBuyListPayload(request, port) as any,
+        payload: buildBuyListPayload(request, port, printTemplates) as any,
       },
       include: { port: { include: { bindings: true } }, order: true },
     }))

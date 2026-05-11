@@ -263,36 +263,48 @@ export async function setPrintPortBindings(companyId: string, portId: string, in
   return normalizePort(updated)
 }
 
-export async function getPrinterSettings(companyId?: string) {
-  if (!companyId) {
-    return {
-      ports: [],
-      terminals: [],
-      printers: [],
-      orderPrinterId: null,
-      orderTicketTemplate: defaultTemplate,
-    }
-  }
+type PrintTemplateKind = 'ORDER_TICKET' | 'BUY_LIST'
 
-  const [ports, terminals] = await Promise.all([
-    listPrintPorts(companyId),
-    getPrintTerminals(companyId),
-  ])
-
-  return {
-    ports,
-    terminals,
-    printers: [],
-    orderPrinterId: null,
-    orderTicketTemplate: defaultTemplate,
-  }
+export type PrintTemplateConfig = {
+  enabledFields: Record<string, boolean>
+  headerText: string
+  footerText: string
 }
 
-export async function savePrinterSettings(input: any) {
-  return input
+const defaultOrderTicketTemplate: PrintTemplateConfig = {
+  enabledFields: {
+    logo: true,
+    portName: true,
+    orderId: true,
+    comanda: true,
+    comandaName: true,
+    observation: true,
+    items: true,
+    variations: true,
+    notes: true,
+    date: true,
+  },
+  headerText: '*** ORDR ***',
+  footerText: '',
 }
 
-const defaultTemplate = {
+const defaultBuyListTemplate: PrintTemplateConfig = {
+  enabledFields: {
+    requestTitle: true,
+    requestId: true,
+    supplierName: true,
+    eventName: true,
+    notes: true,
+    date: true,
+    checklistBoxes: true,
+    categories: true,
+    itemNotes: true,
+  },
+  headerText: '*** LISTA DE COMPRAS ***',
+  footerText: '',
+}
+
+const legacyOrderTemplate = {
   showLogo: true,
   showOrderId: true,
   showDate: true,
@@ -301,6 +313,135 @@ const defaultTemplate = {
   showNotes: true,
   headerText: '*** ORDR ***',
   footerText: '',
+}
+
+function getDefaultTemplate(kind: PrintTemplateKind): PrintTemplateConfig {
+  return kind === 'BUY_LIST' ? defaultBuyListTemplate : defaultOrderTicketTemplate
+}
+
+function sanitizeTemplateConfig(kind: PrintTemplateKind, input: any): PrintTemplateConfig {
+  const defaults = getDefaultTemplate(kind)
+  const enabledFields = { ...defaults.enabledFields }
+
+  if (input?.enabledFields && typeof input.enabledFields === 'object') {
+    for (const key of Object.keys(enabledFields)) {
+      if (input.enabledFields[key] !== undefined) {
+        enabledFields[key] = Boolean(input.enabledFields[key])
+      }
+    }
+  }
+
+  return {
+    enabledFields,
+    headerText: cleanText(input?.headerText) ?? defaults.headerText,
+    footerText: cleanText(input?.footerText) ?? '',
+  }
+}
+
+function normalizeTemplateRecord(kind: PrintTemplateKind, record: any) {
+  return {
+    kind,
+    config: sanitizeTemplateConfig(kind, record?.config),
+    updatedAt: record?.updatedAt?.toISOString?.() ?? record?.updatedAt ?? null,
+  }
+}
+
+export async function getPrintTemplate(companyId: string, kind: PrintTemplateKind) {
+  const record = await prisma.printTemplate.findUnique({
+    where: { companyId_kind: { companyId, kind } },
+  })
+
+  return normalizeTemplateRecord(kind, record)
+}
+
+export async function getPrintTemplates(companyId: string) {
+  const templates = await prisma.printTemplate.findMany({ where: { companyId } })
+  const byKind = new Map(templates.map((template) => [template.kind, template]))
+
+  return {
+    orderTicket: normalizeTemplateRecord('ORDER_TICKET', byKind.get('ORDER_TICKET')),
+    buyList: normalizeTemplateRecord('BUY_LIST', byKind.get('BUY_LIST')),
+  }
+}
+
+export async function savePrintTemplate(companyId: string, kind: PrintTemplateKind, config: any) {
+  const sanitized = sanitizeTemplateConfig(kind, config)
+
+  const template = await prisma.printTemplate.upsert({
+    where: { companyId_kind: { companyId, kind } },
+    create: { companyId, kind, config: sanitized as any },
+    update: { config: sanitized as any },
+  })
+
+  return normalizeTemplateRecord(kind, template)
+}
+
+export async function savePrintTemplates(companyId: string, input: any) {
+  const [orderTicket, buyList] = await Promise.all([
+    input?.orderTicket ? savePrintTemplate(companyId, 'ORDER_TICKET', input.orderTicket.config ?? input.orderTicket) : getPrintTemplate(companyId, 'ORDER_TICKET'),
+    input?.buyList ? savePrintTemplate(companyId, 'BUY_LIST', input.buyList.config ?? input.buyList) : getPrintTemplate(companyId, 'BUY_LIST'),
+  ])
+
+  return { orderTicket, buyList }
+}
+
+export async function getPrinterSettings(companyId?: string) {
+  if (!companyId) {
+    return {
+      ports: [],
+      terminals: [],
+      printers: [],
+      orderPrinterId: null,
+      orderTicketTemplate: legacyOrderTemplate,
+      printTemplates: {
+        orderTicket: normalizeTemplateRecord('ORDER_TICKET', null),
+        buyList: normalizeTemplateRecord('BUY_LIST', null),
+      },
+    }
+  }
+
+  const [ports, terminals, printTemplates] = await Promise.all([
+    listPrintPorts(companyId),
+    getPrintTerminals(companyId),
+    getPrintTemplates(companyId),
+  ])
+
+  return {
+    ports,
+    terminals,
+    printers: [],
+    orderPrinterId: null,
+    orderTicketTemplate: legacyOrderTemplate,
+    printTemplates,
+  }
+}
+
+export async function savePrinterSettings(companyId: string | undefined, input: any) {
+  if (!companyId) throw new Error('COMPANY_REQUIRED')
+
+  const printTemplates = await savePrintTemplates(companyId, input?.printTemplates ?? input)
+
+  return {
+    ...(await getPrinterSettings(companyId)),
+    printTemplates,
+  }
+}
+
+export async function getOrderTicketTemplate(companyId?: string) {
+  if (!companyId) return legacyOrderTemplate
+  const template = await getPrintTemplate(companyId, 'ORDER_TICKET')
+  const config = template.config
+
+  return {
+    showLogo: config.enabledFields.logo,
+    showOrderId: config.enabledFields.orderId,
+    showDate: config.enabledFields.date,
+    showComandaName: config.enabledFields.comandaName,
+    showVariations: config.enabledFields.variations,
+    showNotes: config.enabledFields.notes,
+    headerText: config.headerText,
+    footerText: config.footerText,
+  }
 }
 
 export async function testPrinter(printerNameFromRequest?: string) {
@@ -327,10 +468,6 @@ export async function testPrinter(printerNameFromRequest?: string) {
 
 export async function getSelectedOrderPrinter() {
   return null
-}
-
-export async function getOrderTicketTemplate() {
-  return defaultTemplate
 }
 
 export async function getSelectedOrderPrinterName() {
