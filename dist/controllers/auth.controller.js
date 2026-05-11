@@ -41,10 +41,13 @@ exports.createTerminalLaunchToken = createTerminalLaunchToken;
 exports.terminalLogin = terminalLogin;
 exports.updateMe = updateMe;
 const authService = __importStar(require("../services/auth.service"));
+const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN?.trim() || undefined;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const COOKIE_OPTIONS = {
     httpOnly: true,
     sameSite: 'lax',
-    secure: false,
+    secure: IS_PRODUCTION,
+    ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
     maxAge: 1000 * 60 * 60 * 24 * 7,
 };
 const COOKIE_NAME = 'auth';
@@ -79,7 +82,8 @@ async function logout(_req, res) {
         res.clearCookie(COOKIE_NAME, {
             httpOnly: true,
             sameSite: 'lax',
-            secure: false,
+            secure: IS_PRODUCTION,
+            ...(COOKIE_DOMAIN ? { domain: COOKIE_DOMAIN } : {}),
         });
         return res.json({ ok: true });
     }
@@ -104,12 +108,7 @@ async function switchCompany(req, res) {
             return res.status(400).json({ error: 'companyId is required' });
         }
         const result = await authService.switchUserCompany(userId, companyId);
-        res.cookie(COOKIE_NAME, result.token, {
-            httpOnly: true,
-            sameSite: 'lax',
-            secure: false,
-            maxAge: 1000 * 60 * 60 * 24 * 7,
-        });
+        res.cookie(COOKIE_NAME, result.token, COOKIE_OPTIONS);
         return res.json({
             user: result.user,
             token: result.token,
