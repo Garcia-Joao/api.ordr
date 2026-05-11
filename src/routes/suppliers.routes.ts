@@ -3,11 +3,13 @@ import {
   createSupplierController,
   createSupplierPriceTableController,
   createSupplierPriceTableItemController,
+  deactivateSupplierController,
   deleteSupplierController,
   deleteSupplierPriceTableController,
   deleteSupplierPriceTableItemController,
   getSupplierController,
   listSuppliersController,
+  reactivateSupplierController,
   updateSupplierController,
   updateSupplierPriceTableController,
   updateSupplierPriceTableItemController,
@@ -21,6 +23,8 @@ router.get('/', requireAuth, requirePermission('suppliers.view', 'suppliers.mana
 router.post('/', requireAuth, requirePermission('suppliers.manage'), createSupplierController)
 router.get('/:id', requireAuth, requirePermission('suppliers.view', 'suppliers.manage'), getSupplierController)
 router.patch('/:id', requireAuth, requirePermission('suppliers.manage'), updateSupplierController)
+router.patch('/:id/deactivate', requireAuth, requirePermission('suppliers.manage'), deactivateSupplierController)
+router.patch('/:id/reactivate', requireAuth, requirePermission('suppliers.manage'), reactivateSupplierController)
 router.delete('/:id', requireAuth, requirePermission('suppliers.manage'), deleteSupplierController)
 
 router.post('/:id/price-tables', requireAuth, requirePermission('suppliers.manage'), createSupplierPriceTableController)

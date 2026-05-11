@@ -130,6 +130,7 @@ export async function createSupplier(input: {
   address?: string | null
   notes?: string | null
   photoUrl?: string | null
+  photoData?: string | null
   categories?: string[] | string | null
   createDefaultTable?: boolean
 }) {
@@ -146,6 +147,7 @@ export async function createSupplier(input: {
       address: cleanText(input.address),
       notes: cleanText(input.notes),
       photoUrl: cleanText(input.photoUrl),
+      photoData: cleanText(input.photoData),
       categories: parseCategories(input.categories),
       priceTables: input.createDefaultTable === false ? undefined : {
         create: { name: 'Tabela padrão' },
@@ -168,6 +170,7 @@ export async function updateSupplier(input: {
   address?: string | null
   notes?: string | null
   photoUrl?: string | null
+  photoData?: string | null
   categories?: string[] | string | null
   active?: boolean
 }) {
@@ -184,6 +187,7 @@ export async function updateSupplier(input: {
       address: typeof input.address === 'undefined' ? undefined : cleanText(input.address),
       notes: typeof input.notes === 'undefined' ? undefined : cleanText(input.notes),
       photoUrl: typeof input.photoUrl === 'undefined' ? undefined : cleanText(input.photoUrl),
+      photoData: typeof input.photoData === 'undefined' ? undefined : cleanText(input.photoData),
       categories: typeof input.categories === 'undefined' ? undefined : parseCategories(input.categories),
       active: typeof input.active === 'boolean' ? input.active : undefined,
     },
@@ -192,12 +196,38 @@ export async function updateSupplier(input: {
 }
 
 export async function deactivateSupplier(companyId: string, supplierId: string) {
-  await assertSupplier(companyId, supplierId)
+  const supplier = await assertSupplier(companyId, supplierId)
+
+  if (!supplier.active) return getSupplier(companyId, supplierId)
+
   return prisma.supplier.update({
     where: { id: supplierId },
     data: { active: false },
     include: SUPPLIER_INCLUDE,
   })
+}
+
+export async function reactivateSupplier(companyId: string, supplierId: string) {
+  const supplier = await assertSupplier(companyId, supplierId)
+
+  if (supplier.active) return getSupplier(companyId, supplierId)
+
+  return prisma.supplier.update({
+    where: { id: supplierId },
+    data: { active: true },
+    include: SUPPLIER_INCLUDE,
+  })
+}
+
+export async function deleteInactiveSupplier(companyId: string, supplierId: string) {
+  const supplier = await assertSupplier(companyId, supplierId)
+
+  if (supplier.active) {
+    throw new Error('SUPPLIER_MUST_BE_INACTIVE_TO_DELETE')
+  }
+
+  await prisma.supplier.delete({ where: { id: supplierId } })
+  return { deleted: true, supplierId }
 }
 
 export async function createSupplierPriceTable(input: {

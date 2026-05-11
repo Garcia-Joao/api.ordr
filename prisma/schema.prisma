@@ -840,6 +840,7 @@ model Supplier {
   address   String?
   notes     String?
   photoUrl  String?
+  photoData String? @db.Text
   categories String[] @default([])
   active    Boolean @default(true)
 

@@ -5,6 +5,8 @@ exports.getSupplier = getSupplier;
 exports.createSupplier = createSupplier;
 exports.updateSupplier = updateSupplier;
 exports.deactivateSupplier = deactivateSupplier;
+exports.reactivateSupplier = reactivateSupplier;
+exports.deleteInactiveSupplier = deleteInactiveSupplier;
 exports.createSupplierPriceTable = createSupplierPriceTable;
 exports.updateSupplierPriceTable = updateSupplierPriceTable;
 exports.deleteSupplierPriceTable = deleteSupplierPriceTable;
@@ -138,6 +140,7 @@ async function createSupplier(input) {
             address: cleanText(input.address),
             notes: cleanText(input.notes),
             photoUrl: cleanText(input.photoUrl),
+            photoData: cleanText(input.photoData),
             categories: parseCategories(input.categories),
             priceTables: input.createDefaultTable === false ? undefined : {
                 create: { name: 'Tabela padrão' },
@@ -160,6 +163,7 @@ async function updateSupplier(input) {
             address: typeof input.address === 'undefined' ? undefined : cleanText(input.address),
             notes: typeof input.notes === 'undefined' ? undefined : cleanText(input.notes),
             photoUrl: typeof input.photoUrl === 'undefined' ? undefined : cleanText(input.photoUrl),
+            photoData: typeof input.photoData === 'undefined' ? undefined : cleanText(input.photoData),
             categories: typeof input.categories === 'undefined' ? undefined : parseCategories(input.categories),
             active: typeof input.active === 'boolean' ? input.active : undefined,
         },
@@ -167,12 +171,32 @@ async function updateSupplier(input) {
     });
 }
 async function deactivateSupplier(companyId, supplierId) {
-    await assertSupplier(companyId, supplierId);
+    const supplier = await assertSupplier(companyId, supplierId);
+    if (!supplier.active)
+        return getSupplier(companyId, supplierId);
     return prisma_1.prisma.supplier.update({
         where: { id: supplierId },
         data: { active: false },
         include: SUPPLIER_INCLUDE,
     });
+}
+async function reactivateSupplier(companyId, supplierId) {
+    const supplier = await assertSupplier(companyId, supplierId);
+    if (supplier.active)
+        return getSupplier(companyId, supplierId);
+    return prisma_1.prisma.supplier.update({
+        where: { id: supplierId },
+        data: { active: true },
+        include: SUPPLIER_INCLUDE,
+    });
+}
+async function deleteInactiveSupplier(companyId, supplierId) {
+    const supplier = await assertSupplier(companyId, supplierId);
+    if (supplier.active) {
+        throw new Error('SUPPLIER_MUST_BE_INACTIVE_TO_DELETE');
+    }
+    await prisma_1.prisma.supplier.delete({ where: { id: supplierId } });
+    return { deleted: true, supplierId };
 }
 async function createSupplierPriceTable(input) {
     await assertSupplier(input.companyId, input.supplierId);

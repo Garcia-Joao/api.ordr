@@ -9,6 +9,8 @@ router.get('/', auth_middleware_1.requireAuth, (0, require_permission_middleware
 router.post('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('suppliers.manage'), suppliers_controller_1.createSupplierController);
 router.get('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('suppliers.view', 'suppliers.manage'), suppliers_controller_1.getSupplierController);
 router.patch('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('suppliers.manage'), suppliers_controller_1.updateSupplierController);
+router.patch('/:id/deactivate', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('suppliers.manage'), suppliers_controller_1.deactivateSupplierController);
+router.patch('/:id/reactivate', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('suppliers.manage'), suppliers_controller_1.reactivateSupplierController);
 router.delete('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('suppliers.manage'), suppliers_controller_1.deleteSupplierController);
 router.post('/:id/price-tables', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('suppliers.manage'), suppliers_controller_1.createSupplierPriceTableController);
 router.patch('/:id/price-tables/:tableId', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('suppliers.manage'), suppliers_controller_1.updateSupplierPriceTableController);

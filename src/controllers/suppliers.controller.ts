@@ -4,10 +4,12 @@ import {
   createSupplierPriceTable,
   createSupplierPriceTableItem,
   deactivateSupplier,
+  deleteInactiveSupplier,
   deleteSupplierPriceTable,
   deleteSupplierPriceTableItem,
   getSupplier,
   listSuppliers,
+  reactivateSupplier,
   updateSupplier,
   updateSupplierPriceTable,
   updateSupplierPriceTableItem,
@@ -34,6 +36,7 @@ function handleError(res: Response, error: any) {
       ? 404
       : message.includes('REQUIRED') ||
           message.includes('INVALID') ||
+          message.includes('MUST') ||
           message.includes('ALREADY') ||
           message.includes('key')
         ? 400
@@ -78,9 +81,25 @@ export async function updateSupplierController(req: Request, res: Response) {
   }
 }
 
-export async function deleteSupplierController(req: Request, res: Response) {
+export async function deactivateSupplierController(req: Request, res: Response) {
   try {
     return res.json(await deactivateSupplier(getCompanyId(req), getSingleParam(req.params.id, 'SUPPLIER_ID')))
+  } catch (error) {
+    return handleError(res, error)
+  }
+}
+
+export async function reactivateSupplierController(req: Request, res: Response) {
+  try {
+    return res.json(await reactivateSupplier(getCompanyId(req), getSingleParam(req.params.id, 'SUPPLIER_ID')))
+  } catch (error) {
+    return handleError(res, error)
+  }
+}
+
+export async function deleteSupplierController(req: Request, res: Response) {
+  try {
+    return res.json(await deleteInactiveSupplier(getCompanyId(req), getSingleParam(req.params.id, 'SUPPLIER_ID')))
   } catch (error) {
     return handleError(res, error)
   }

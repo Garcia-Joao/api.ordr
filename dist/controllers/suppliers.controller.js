@@ -4,6 +4,8 @@ exports.listSuppliersController = listSuppliersController;
 exports.getSupplierController = getSupplierController;
 exports.createSupplierController = createSupplierController;
 exports.updateSupplierController = updateSupplierController;
+exports.deactivateSupplierController = deactivateSupplierController;
+exports.reactivateSupplierController = reactivateSupplierController;
 exports.deleteSupplierController = deleteSupplierController;
 exports.createSupplierPriceTableController = createSupplierPriceTableController;
 exports.updateSupplierPriceTableController = updateSupplierPriceTableController;
@@ -29,6 +31,7 @@ function handleError(res, error) {
         ? 404
         : message.includes('REQUIRED') ||
             message.includes('INVALID') ||
+            message.includes('MUST') ||
             message.includes('ALREADY') ||
             message.includes('key')
             ? 400
@@ -71,9 +74,25 @@ async function updateSupplierController(req, res) {
         return handleError(res, error);
     }
 }
-async function deleteSupplierController(req, res) {
+async function deactivateSupplierController(req, res) {
     try {
         return res.json(await (0, suppliers_service_1.deactivateSupplier)(getCompanyId(req), getSingleParam(req.params.id, 'SUPPLIER_ID')));
+    }
+    catch (error) {
+        return handleError(res, error);
+    }
+}
+async function reactivateSupplierController(req, res) {
+    try {
+        return res.json(await (0, suppliers_service_1.reactivateSupplier)(getCompanyId(req), getSingleParam(req.params.id, 'SUPPLIER_ID')));
+    }
+    catch (error) {
+        return handleError(res, error);
+    }
+}
+async function deleteSupplierController(req, res) {
+    try {
+        return res.json(await (0, suppliers_service_1.deleteInactiveSupplier)(getCompanyId(req), getSingleParam(req.params.id, 'SUPPLIER_ID')));
     }
     catch (error) {
         return handleError(res, error);
