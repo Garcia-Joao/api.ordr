@@ -980,6 +980,10 @@ const order = await prisma.$transaction(async (tx: any) => {
   }
 }
 
+export async function reprintOrderTickets(companyId: string, orderId: string) {
+  return createOrderPrintJobs(companyId, orderId)
+}
+
 export async function getOrdersByCompany(companyId: string, includeCancelled = true) {
   const orders = await prisma.order.findMany({
     where: {

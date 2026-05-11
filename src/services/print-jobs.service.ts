@@ -66,10 +66,13 @@ async function getPortForJob(companyId: string, portId?: string | null) {
   if (!port) throw new Error('PRINT_PORT_NOT_FOUND')
   const hasAvailableBinding = (port.bindings ?? []).some((binding: any) =>
     binding.terminalDevice?.printTerminalEnabled &&
-    binding.terminalDevice?.clientType === 'ELECTRON' &&
-    isTerminalOnline(binding.terminalDevice)
+    binding.terminalDevice?.clientType === 'ELECTRON'
   )
 
+  // Do not reject the job just because lastSeenAt is stale. When the Electron
+  // window is hidden in the tray, the app can still be alive while heartbeat is
+  // delayed; jobs should remain queued for the bound terminal instead of being
+  // lost as FAILED.
   if (!hasAvailableBinding) throw new Error('PRINT_PORT_NOT_BOUND')
 
   return port
@@ -236,8 +239,7 @@ export async function createOrderPrintJobs(
     const tickets = buildTicketsForPortItems(itemsWithModes)
     const bindings = (port?.bindings ?? []).filter((binding: any) =>
       binding.terminalDevice?.printTerminalEnabled &&
-      binding.terminalDevice?.clientType === 'ELECTRON' &&
-      isTerminalOnline(binding.terminalDevice)
+      binding.terminalDevice?.clientType === 'ELECTRON'
     )
 
     if (!port || bindings.length === 0) {
@@ -404,8 +406,7 @@ export async function createBuyRequestShoppingListPrintJobs(input: {
 
   const bindings = (port.bindings ?? []).filter((binding: any) =>
     binding.terminalDevice?.printTerminalEnabled &&
-    binding.terminalDevice?.clientType === 'ELECTRON' &&
-    isTerminalOnline(binding.terminalDevice)
+    binding.terminalDevice?.clientType === 'ELECTRON'
   )
 
   if (bindings.length === 0) {
@@ -449,6 +450,15 @@ export async function createBuyRequestShoppingListPrintJobs(input: {
   }
 
   return jobs.map(normalizeJob)
+}
+
+
+export async function reprintOrderTickets(companyId: string, orderId: string) {
+  // Existing orders do not currently persist the item print mode chosen at sale time,
+  // so reprint uses the default ticket mode: one ticket per unit unless the caller
+  // creates a future persisted mode. This still respects the current product/category
+  // print ports and the saved print template.
+  return createOrderPrintJobs(companyId, orderId)
 }
 
 export async function listTerminalPendingJobs(companyId: string, terminalDeviceId: string) {
