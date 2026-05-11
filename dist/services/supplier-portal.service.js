@@ -12,6 +12,10 @@ exports.deletePriceTable = deletePriceTable;
 exports.createPriceTableItem = createPriceTableItem;
 exports.updatePriceTableItem = updatePriceTableItem;
 exports.deletePriceTableItem = deletePriceTableItem;
+exports.createPriceTableItemFromExisting = createPriceTableItemFromExisting;
+exports.duplicatePriceTable = duplicatePriceTable;
+exports.bulkAdjustPriceTablePrices = bulkAdjustPriceTablePrices;
+exports.updateItemStock = updateItemStock;
 exports.listOrders = listOrders;
 const client_1 = require("@prisma/client");
 const prisma_1 = require("../lib/prisma");
@@ -72,6 +76,12 @@ function parseQuantity(value) {
     const number = typeof value === 'number' ? value : Number(String(value ?? '1').replace(',', '.'));
     if (!Number.isFinite(number) || number <= 0)
         throw new Error('QUANTITY_INVALID');
+    return new client_1.Prisma.Decimal(number.toFixed(3));
+}
+function parseStockQuantity(value) {
+    const number = typeof value === 'number' ? value : Number(String(value ?? '0').replace(',', '.'));
+    if (!Number.isFinite(number) || number < 0)
+        throw new Error('STOCK_QUANTITY_INVALID');
     return new client_1.Prisma.Decimal(number.toFixed(3));
 }
 function parseUnit(value) {
@@ -196,6 +206,7 @@ async function ensureSupplierProfile(companyId) {
             ordrCode: await generateSupplierCode(),
             categories: [],
             onlineEnabled: true,
+            automaticAvailability: true,
             operatingHours: DEFAULT_OPERATING_HOURS,
             priceTables: { create: { name: 'Tabela padrão' } },
         },
@@ -218,7 +229,7 @@ function serializeSupplier(supplier) {
         active: supplier.active,
         ordrCode: supplier.ordrCode ?? null,
         onlineEnabled: Boolean(supplier.onlineEnabled),
-        publicListingEnabled: Boolean(supplier.publicListingEnabled),
+        automaticAvailability: Boolean(supplier.automaticAvailability ?? true),
         operatingHours: normalizeOperatingHours(supplier.operatingHours),
         onlineStatus: computeOnlineStatus(supplier),
         createdAt: supplier.createdAt,
@@ -257,6 +268,11 @@ function serializeItem(item) {
         unitPrice: decimalToNumber(item.unitPrice),
         price: decimalToNumber(item.unitPrice),
         notes: item.notes ?? null,
+        stockEnabled: Boolean(item.stockEnabled),
+        stockQuantity: decimalToNumber(item.stockQuantity),
+        minStockQuantity: decimalToNumber(item.minStockQuantity),
+        lowStock: Boolean(item.stockEnabled) && decimalToNumber(item.stockQuantity) <= decimalToNumber(item.minStockQuantity),
+        stockUpdatedAt: item.stockUpdatedAt ?? null,
         lastQuotedAt: item.lastQuotedAt ?? null,
         linkedStockProductName: item.product?.name ?? null,
         categoryEmoji: item.product?.category?.emoji ?? null,
@@ -279,6 +295,7 @@ async function getDashboard(companyId) {
     const activeTables = tables.filter((table) => table.active);
     const linkedProducts = products.filter((product) => product.productId).length;
     const visibleProducts = products.filter((product) => product.tableActive);
+    const lowStockProducts = visibleProducts.filter((product) => product.lowStock).length;
     return {
         supplier: profile,
         pendingOrders: 0,
@@ -286,6 +303,7 @@ async function getDashboard(companyId) {
         activePriceTables: activeTables.length,
         linkedProducts,
         productCount: visibleProducts.length,
+        lowStockProducts,
         categories: profile.categories,
         onlineStatus: profile.onlineStatus,
         recentOrders: [],
@@ -294,7 +312,7 @@ async function getDashboard(companyId) {
             { label: 'Produtos ativos', value: String(visibleProducts.length) },
             { label: 'Tabelas ativas', value: String(activeTables.length) },
             { label: 'Produtos vinculados', value: String(linkedProducts) },
-            { label: 'Visibilidade', value: profile.publicListingEnabled ? 'Público' : 'Por código' },
+            { label: 'Estoque baixo', value: String(lowStockProducts) },
         ],
     };
 }
@@ -318,7 +336,7 @@ async function updateProfile(companyId, input) {
             photoData: typeof input.photoData === 'undefined' ? undefined : cleanText(input.photoData),
             categories: typeof input.categories === 'undefined' ? undefined : parseCategories(input.categories),
             onlineEnabled: typeof input.onlineEnabled === 'boolean' ? input.onlineEnabled : undefined,
-            publicListingEnabled: typeof input.publicListingEnabled === 'boolean' ? input.publicListingEnabled : undefined,
+            automaticAvailability: typeof input.automaticAvailability === 'boolean' ? input.automaticAvailability : undefined,
             operatingHours: typeof input.operatingHours === 'undefined'
                 ? undefined
                 : normalizeOperatingHours(input.operatingHours),
@@ -410,6 +428,10 @@ async function createPriceTableItem(companyId, tableId, input) {
             quantity: parseQuantity(input.quantity),
             unitPrice: parseMoney(input.unitPrice ?? input.price, 'UNIT_PRICE'),
             notes: cleanText(input.notes),
+            stockEnabled: typeof input.stockEnabled === 'boolean' ? input.stockEnabled : false,
+            stockQuantity: parseStockQuantity(input.stockQuantity ?? 0),
+            minStockQuantity: parseStockQuantity(input.minStockQuantity ?? 0),
+            stockUpdatedAt: typeof input.stockQuantity === 'undefined' ? null : new Date(),
             lastQuotedAt: parseDate(input.lastQuotedAt) ?? new Date(),
         },
     });
@@ -437,6 +459,10 @@ async function updatePriceTableItem(companyId, tableId, itemId, input) {
                 ? undefined
                 : parseMoney(input.unitPrice ?? input.price, 'UNIT_PRICE'),
             notes: typeof input.notes === 'undefined' ? undefined : cleanText(input.notes),
+            stockEnabled: typeof input.stockEnabled === 'undefined' ? undefined : Boolean(input.stockEnabled),
+            stockQuantity: typeof input.stockQuantity === 'undefined' ? undefined : parseStockQuantity(input.stockQuantity),
+            minStockQuantity: typeof input.minStockQuantity === 'undefined' ? undefined : parseStockQuantity(input.minStockQuantity),
+            stockUpdatedAt: typeof input.stockQuantity === 'undefined' ? undefined : new Date(),
             lastQuotedAt: typeof input.lastQuotedAt === 'undefined' ? undefined : parseDate(input.lastQuotedAt),
         },
     });
@@ -448,6 +474,128 @@ async function deletePriceTableItem(companyId, tableId, itemId) {
     if (!table)
         throw new Error('PRICE_TABLE_NOT_FOUND');
     await prisma_1.prisma.supplierPriceTableItem.deleteMany({ where: { id: itemId, priceTableId: tableId } });
+    return listPriceTables(companyId);
+}
+async function createPriceTableItemFromExisting(companyId, tableId, input) {
+    const supplier = await ensureSupplierProfile(companyId);
+    const targetTable = await prisma_1.prisma.supplierPriceTable.findFirst({ where: { id: tableId, supplierId: supplier.id } });
+    if (!targetTable)
+        throw new Error('PRICE_TABLE_NOT_FOUND');
+    const sourceItemId = requiredText(input.sourceItemId, 'SOURCE_ITEM_ID');
+    const source = await prisma_1.prisma.supplierPriceTableItem.findFirst({
+        where: { id: sourceItemId, priceTable: { supplierId: supplier.id } },
+    });
+    if (!source)
+        throw new Error('SOURCE_ITEM_NOT_FOUND');
+    const adjustment = typeof input.priceAdjustmentPercent === 'undefined' || input.priceAdjustmentPercent === null || input.priceAdjustmentPercent === ''
+        ? 0
+        : Number(String(input.priceAdjustmentPercent).replace(',', '.'));
+    if (!Number.isFinite(adjustment))
+        throw new Error('PRICE_ADJUSTMENT_INVALID');
+    const basePrice = decimalToNumber(source.unitPrice);
+    const nextPrice = Math.max(0, basePrice * (1 + adjustment / 100));
+    await prisma_1.prisma.supplierPriceTableItem.create({
+        data: {
+            priceTableId: tableId,
+            productId: source.productId,
+            itemName: cleanText(input.itemName) ?? source.itemName,
+            sku: typeof input.sku === 'undefined' ? source.sku : cleanText(input.sku),
+            category: typeof input.category === 'undefined' ? source.category : cleanText(input.category),
+            unit: typeof input.unit === 'undefined' ? source.unit : parseUnit(input.unit),
+            quantity: typeof input.quantity === 'undefined' ? source.quantity : parseQuantity(input.quantity),
+            unitPrice: new client_1.Prisma.Decimal(nextPrice.toFixed(2)),
+            notes: typeof input.notes === 'undefined' ? source.notes : cleanText(input.notes),
+            stockEnabled: Boolean(input.stockEnabled ?? source.stockEnabled),
+            stockQuantity: typeof input.stockQuantity === 'undefined' ? source.stockQuantity : parseStockQuantity(input.stockQuantity),
+            minStockQuantity: typeof input.minStockQuantity === 'undefined' ? source.minStockQuantity : parseStockQuantity(input.minStockQuantity),
+            stockUpdatedAt: new Date(),
+            lastQuotedAt: new Date(),
+        },
+    });
+    return listPriceTables(companyId);
+}
+async function duplicatePriceTable(companyId, tableId, input) {
+    const supplier = await ensureSupplierProfile(companyId);
+    const table = await prisma_1.prisma.supplierPriceTable.findFirst({
+        where: { id: tableId, supplierId: supplier.id },
+        include: { items: true },
+    });
+    if (!table)
+        throw new Error('PRICE_TABLE_NOT_FOUND');
+    const adjustment = typeof input.priceAdjustmentPercent === 'undefined' || input.priceAdjustmentPercent === null || input.priceAdjustmentPercent === ''
+        ? 0
+        : Number(String(input.priceAdjustmentPercent).replace(',', '.'));
+    if (!Number.isFinite(adjustment))
+        throw new Error('PRICE_ADJUSTMENT_INVALID');
+    const name = cleanText(input.name) ?? `${table.name} - cópia`;
+    await prisma_1.prisma.supplierPriceTable.create({
+        data: {
+            supplierId: supplier.id,
+            name,
+            description: typeof input.description === 'undefined' ? table.description : cleanText(input.description),
+            active: typeof input.active === 'boolean' ? input.active : false,
+            validFrom: parseDate(input.validFrom),
+            validUntil: parseDate(input.validUntil),
+            items: {
+                create: table.items.map((item) => {
+                    const nextPrice = Math.max(0, decimalToNumber(item.unitPrice) * (1 + adjustment / 100));
+                    return {
+                        productId: item.productId,
+                        itemName: item.itemName,
+                        sku: item.sku,
+                        category: item.category,
+                        unit: item.unit,
+                        quantity: item.quantity,
+                        unitPrice: new client_1.Prisma.Decimal(nextPrice.toFixed(2)),
+                        notes: item.notes,
+                        stockEnabled: item.stockEnabled,
+                        stockQuantity: item.stockQuantity,
+                        minStockQuantity: item.minStockQuantity,
+                        stockUpdatedAt: item.stockUpdatedAt,
+                        lastQuotedAt: new Date(),
+                    };
+                }),
+            },
+        },
+    });
+    return listPriceTables(companyId);
+}
+async function bulkAdjustPriceTablePrices(companyId, tableId, input) {
+    const supplier = await ensureSupplierProfile(companyId);
+    const table = await prisma_1.prisma.supplierPriceTable.findFirst({
+        where: { id: tableId, supplierId: supplier.id },
+        include: { items: true },
+    });
+    if (!table)
+        throw new Error('PRICE_TABLE_NOT_FOUND');
+    const adjustment = Number(String(input.priceAdjustmentPercent ?? '').replace(',', '.'));
+    if (!Number.isFinite(adjustment))
+        throw new Error('PRICE_ADJUSTMENT_INVALID');
+    await prisma_1.prisma.$transaction(table.items.map((item) => {
+        const nextPrice = Math.max(0, decimalToNumber(item.unitPrice) * (1 + adjustment / 100));
+        return prisma_1.prisma.supplierPriceTableItem.update({
+            where: { id: item.id },
+            data: { unitPrice: new client_1.Prisma.Decimal(nextPrice.toFixed(2)), lastQuotedAt: new Date() },
+        });
+    }));
+    return listPriceTables(companyId);
+}
+async function updateItemStock(companyId, tableId, itemId, input) {
+    const supplier = await ensureSupplierProfile(companyId);
+    const item = await prisma_1.prisma.supplierPriceTableItem.findFirst({
+        where: { id: itemId, priceTableId: tableId, priceTable: { supplierId: supplier.id } },
+    });
+    if (!item)
+        throw new Error('PRICE_TABLE_ITEM_NOT_FOUND');
+    await prisma_1.prisma.supplierPriceTableItem.update({
+        where: { id: itemId },
+        data: {
+            stockEnabled: typeof input.stockEnabled === 'undefined' ? undefined : Boolean(input.stockEnabled),
+            stockQuantity: typeof input.stockQuantity === 'undefined' ? undefined : parseStockQuantity(input.stockQuantity),
+            minStockQuantity: typeof input.minStockQuantity === 'undefined' ? undefined : parseStockQuantity(input.minStockQuantity),
+            stockUpdatedAt: new Date(),
+        },
+    });
     return listPriceTables(companyId);
 }
 async function listOrders(companyId) {

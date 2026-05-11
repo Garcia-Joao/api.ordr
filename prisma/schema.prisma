@@ -857,6 +857,7 @@ model Supplier {
   ordrCode          String?  @unique
   onlineEnabled        Boolean @default(true)
   publicListingEnabled Boolean @default(false)
+  automaticAvailability Boolean @default(true)
   operatingHours       Json?
 
   active    Boolean @default(true)
@@ -928,6 +929,12 @@ model SupplierPriceTableItem {
   quantity    Decimal   @default(1) @db.Decimal(10, 3)
   unitPrice   Decimal   @db.Decimal(10, 2)
   notes       String?
+
+  stockEnabled     Boolean  @default(false)
+  stockQuantity    Decimal  @default(0) @db.Decimal(10, 3)
+  minStockQuantity Decimal  @default(0) @db.Decimal(10, 3)
+  stockUpdatedAt   DateTime?
+
   lastQuotedAt DateTime?
 
   createdAt DateTime @default(now())

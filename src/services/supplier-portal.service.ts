@@ -76,6 +76,12 @@ function parseQuantity(value: unknown) {
   return new Prisma.Decimal(number.toFixed(3))
 }
 
+function parseStockQuantity(value: unknown) {
+  const number = typeof value === 'number' ? value : Number(String(value ?? '0').replace(',', '.'))
+  if (!Number.isFinite(number) || number < 0) throw new Error('STOCK_QUANTITY_INVALID')
+  return new Prisma.Decimal(number.toFixed(3))
+}
+
 function parseUnit(value: unknown): StockUnitInput {
   const unit = cleanText(value) ?? 'unit'
   if (!['unit', 'ml', 'l', 'g', 'kg'].includes(unit)) throw new Error('UNIT_INVALID')
@@ -215,6 +221,7 @@ async function ensureSupplierProfile(companyId: string) {
       ordrCode: await generateSupplierCode(),
       categories: [],
       onlineEnabled: true,
+      automaticAvailability: true,
       operatingHours: DEFAULT_OPERATING_HOURS,
       priceTables: { create: { name: 'Tabela padrão' } },
     },
@@ -238,7 +245,7 @@ function serializeSupplier(supplier: any) {
     active: supplier.active,
     ordrCode: supplier.ordrCode ?? null,
     onlineEnabled: Boolean(supplier.onlineEnabled),
-    publicListingEnabled: Boolean(supplier.publicListingEnabled),
+    automaticAvailability: Boolean(supplier.automaticAvailability ?? true),
     operatingHours: normalizeOperatingHours(supplier.operatingHours),
     onlineStatus: computeOnlineStatus(supplier),
     createdAt: supplier.createdAt,
@@ -280,6 +287,11 @@ function serializeItem(item: any) {
     unitPrice: decimalToNumber(item.unitPrice),
     price: decimalToNumber(item.unitPrice),
     notes: item.notes ?? null,
+    stockEnabled: Boolean(item.stockEnabled),
+    stockQuantity: decimalToNumber(item.stockQuantity),
+    minStockQuantity: decimalToNumber(item.minStockQuantity),
+    lowStock: Boolean(item.stockEnabled) && decimalToNumber(item.stockQuantity) <= decimalToNumber(item.minStockQuantity),
+    stockUpdatedAt: item.stockUpdatedAt ?? null,
     lastQuotedAt: item.lastQuotedAt ?? null,
     linkedStockProductName: item.product?.name ?? null,
     categoryEmoji: item.product?.category?.emoji ?? null,
@@ -307,6 +319,7 @@ export async function getDashboard(companyId: string) {
   const activeTables = tables.filter((table: any) => table.active)
   const linkedProducts = products.filter((product: any) => product.productId).length
   const visibleProducts = products.filter((product: any) => product.tableActive)
+  const lowStockProducts = visibleProducts.filter((product: any) => product.lowStock).length
 
   return {
     supplier: profile,
@@ -315,6 +328,7 @@ export async function getDashboard(companyId: string) {
     activePriceTables: activeTables.length,
     linkedProducts,
     productCount: visibleProducts.length,
+    lowStockProducts,
     categories: profile.categories,
     onlineStatus: profile.onlineStatus,
     recentOrders: [],
@@ -323,7 +337,7 @@ export async function getDashboard(companyId: string) {
       { label: 'Produtos ativos', value: String(visibleProducts.length) },
       { label: 'Tabelas ativas', value: String(activeTables.length) },
       { label: 'Produtos vinculados', value: String(linkedProducts) },
-      { label: 'Visibilidade', value: profile.publicListingEnabled ? 'Público' : 'Por código' },
+      { label: 'Estoque baixo', value: String(lowStockProducts) },
     ],
   }
 }
@@ -350,7 +364,7 @@ export async function updateProfile(companyId: string, input: any) {
       photoData: typeof input.photoData === 'undefined' ? undefined : cleanText(input.photoData),
       categories: typeof input.categories === 'undefined' ? undefined : parseCategories(input.categories),
       onlineEnabled: typeof input.onlineEnabled === 'boolean' ? input.onlineEnabled : undefined,
-      publicListingEnabled: typeof input.publicListingEnabled === 'boolean' ? input.publicListingEnabled : undefined,
+      automaticAvailability: typeof input.automaticAvailability === 'boolean' ? input.automaticAvailability : undefined,
       operatingHours:
         typeof input.operatingHours === 'undefined'
           ? undefined
@@ -457,6 +471,10 @@ export async function createPriceTableItem(companyId: string, tableId: string, i
       quantity: parseQuantity(input.quantity),
       unitPrice: parseMoney(input.unitPrice ?? input.price, 'UNIT_PRICE'),
       notes: cleanText(input.notes),
+      stockEnabled: typeof input.stockEnabled === 'boolean' ? input.stockEnabled : false,
+      stockQuantity: parseStockQuantity(input.stockQuantity ?? 0),
+      minStockQuantity: parseStockQuantity(input.minStockQuantity ?? 0),
+      stockUpdatedAt: typeof input.stockQuantity === 'undefined' ? null : new Date(),
       lastQuotedAt: parseDate(input.lastQuotedAt) ?? new Date(),
     },
   })
@@ -486,6 +504,10 @@ export async function updatePriceTableItem(companyId: string, tableId: string, i
         ? undefined
         : parseMoney(input.unitPrice ?? input.price, 'UNIT_PRICE'),
       notes: typeof input.notes === 'undefined' ? undefined : cleanText(input.notes),
+      stockEnabled: typeof input.stockEnabled === 'undefined' ? undefined : Boolean(input.stockEnabled),
+      stockQuantity: typeof input.stockQuantity === 'undefined' ? undefined : parseStockQuantity(input.stockQuantity),
+      minStockQuantity: typeof input.minStockQuantity === 'undefined' ? undefined : parseStockQuantity(input.minStockQuantity),
+      stockUpdatedAt: typeof input.stockQuantity === 'undefined' ? undefined : new Date(),
       lastQuotedAt: typeof input.lastQuotedAt === 'undefined' ? undefined : parseDate(input.lastQuotedAt),
     },
   })
@@ -499,6 +521,138 @@ export async function deletePriceTableItem(companyId: string, tableId: string, i
   if (!table) throw new Error('PRICE_TABLE_NOT_FOUND')
 
   await prisma.supplierPriceTableItem.deleteMany({ where: { id: itemId, priceTableId: tableId } })
+  return listPriceTables(companyId)
+}
+
+export async function createPriceTableItemFromExisting(companyId: string, tableId: string, input: any) {
+  const supplier = await ensureSupplierProfile(companyId)
+  const targetTable = await prisma.supplierPriceTable.findFirst({ where: { id: tableId, supplierId: supplier.id } })
+  if (!targetTable) throw new Error('PRICE_TABLE_NOT_FOUND')
+
+  const sourceItemId = requiredText(input.sourceItemId, 'SOURCE_ITEM_ID')
+  const source = await prisma.supplierPriceTableItem.findFirst({
+    where: { id: sourceItemId, priceTable: { supplierId: supplier.id } },
+  })
+  if (!source) throw new Error('SOURCE_ITEM_NOT_FOUND')
+
+  const adjustment = typeof input.priceAdjustmentPercent === 'undefined' || input.priceAdjustmentPercent === null || input.priceAdjustmentPercent === ''
+    ? 0
+    : Number(String(input.priceAdjustmentPercent).replace(',', '.'))
+  if (!Number.isFinite(adjustment)) throw new Error('PRICE_ADJUSTMENT_INVALID')
+
+  const basePrice = decimalToNumber(source.unitPrice)
+  const nextPrice = Math.max(0, basePrice * (1 + adjustment / 100))
+
+  await prisma.supplierPriceTableItem.create({
+    data: {
+      priceTableId: tableId,
+      productId: source.productId,
+      itemName: cleanText(input.itemName) ?? source.itemName,
+      sku: typeof input.sku === 'undefined' ? source.sku : cleanText(input.sku),
+      category: typeof input.category === 'undefined' ? source.category : cleanText(input.category),
+      unit: typeof input.unit === 'undefined' ? source.unit : parseUnit(input.unit),
+      quantity: typeof input.quantity === 'undefined' ? source.quantity : parseQuantity(input.quantity),
+      unitPrice: new Prisma.Decimal(nextPrice.toFixed(2)),
+      notes: typeof input.notes === 'undefined' ? source.notes : cleanText(input.notes),
+      stockEnabled: Boolean(input.stockEnabled ?? source.stockEnabled),
+      stockQuantity: typeof input.stockQuantity === 'undefined' ? source.stockQuantity : parseStockQuantity(input.stockQuantity),
+      minStockQuantity: typeof input.minStockQuantity === 'undefined' ? source.minStockQuantity : parseStockQuantity(input.minStockQuantity),
+      stockUpdatedAt: new Date(),
+      lastQuotedAt: new Date(),
+    },
+  })
+
+  return listPriceTables(companyId)
+}
+
+export async function duplicatePriceTable(companyId: string, tableId: string, input: any) {
+  const supplier = await ensureSupplierProfile(companyId)
+  const table = await prisma.supplierPriceTable.findFirst({
+    where: { id: tableId, supplierId: supplier.id },
+    include: { items: true },
+  })
+  if (!table) throw new Error('PRICE_TABLE_NOT_FOUND')
+
+  const adjustment = typeof input.priceAdjustmentPercent === 'undefined' || input.priceAdjustmentPercent === null || input.priceAdjustmentPercent === ''
+    ? 0
+    : Number(String(input.priceAdjustmentPercent).replace(',', '.'))
+  if (!Number.isFinite(adjustment)) throw new Error('PRICE_ADJUSTMENT_INVALID')
+
+  const name = cleanText(input.name) ?? `${table.name} - cópia`
+
+  await prisma.supplierPriceTable.create({
+    data: {
+      supplierId: supplier.id,
+      name,
+      description: typeof input.description === 'undefined' ? table.description : cleanText(input.description),
+      active: typeof input.active === 'boolean' ? input.active : false,
+      validFrom: parseDate(input.validFrom),
+      validUntil: parseDate(input.validUntil),
+      items: {
+        create: table.items.map((item) => {
+          const nextPrice = Math.max(0, decimalToNumber(item.unitPrice) * (1 + adjustment / 100))
+          return {
+            productId: item.productId,
+            itemName: item.itemName,
+            sku: item.sku,
+            category: item.category,
+            unit: item.unit,
+            quantity: item.quantity,
+            unitPrice: new Prisma.Decimal(nextPrice.toFixed(2)),
+            notes: item.notes,
+            stockEnabled: item.stockEnabled,
+            stockQuantity: item.stockQuantity,
+            minStockQuantity: item.minStockQuantity,
+            stockUpdatedAt: item.stockUpdatedAt,
+            lastQuotedAt: new Date(),
+          }
+        }),
+      },
+    },
+  })
+
+  return listPriceTables(companyId)
+}
+
+export async function bulkAdjustPriceTablePrices(companyId: string, tableId: string, input: any) {
+  const supplier = await ensureSupplierProfile(companyId)
+  const table = await prisma.supplierPriceTable.findFirst({
+    where: { id: tableId, supplierId: supplier.id },
+    include: { items: true },
+  })
+  if (!table) throw new Error('PRICE_TABLE_NOT_FOUND')
+
+  const adjustment = Number(String(input.priceAdjustmentPercent ?? '').replace(',', '.'))
+  if (!Number.isFinite(adjustment)) throw new Error('PRICE_ADJUSTMENT_INVALID')
+
+  await prisma.$transaction(table.items.map((item) => {
+    const nextPrice = Math.max(0, decimalToNumber(item.unitPrice) * (1 + adjustment / 100))
+    return prisma.supplierPriceTableItem.update({
+      where: { id: item.id },
+      data: { unitPrice: new Prisma.Decimal(nextPrice.toFixed(2)), lastQuotedAt: new Date() },
+    })
+  }))
+
+  return listPriceTables(companyId)
+}
+
+export async function updateItemStock(companyId: string, tableId: string, itemId: string, input: any) {
+  const supplier = await ensureSupplierProfile(companyId)
+  const item = await prisma.supplierPriceTableItem.findFirst({
+    where: { id: itemId, priceTableId: tableId, priceTable: { supplierId: supplier.id } },
+  })
+  if (!item) throw new Error('PRICE_TABLE_ITEM_NOT_FOUND')
+
+  await prisma.supplierPriceTableItem.update({
+    where: { id: itemId },
+    data: {
+      stockEnabled: typeof input.stockEnabled === 'undefined' ? undefined : Boolean(input.stockEnabled),
+      stockQuantity: typeof input.stockQuantity === 'undefined' ? undefined : parseStockQuantity(input.stockQuantity),
+      minStockQuantity: typeof input.minStockQuantity === 'undefined' ? undefined : parseStockQuantity(input.minStockQuantity),
+      stockUpdatedAt: new Date(),
+    },
+  })
+
   return listPriceTables(companyId)
 }
 

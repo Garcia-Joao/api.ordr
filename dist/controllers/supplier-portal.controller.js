@@ -9,6 +9,10 @@ exports.ordersController = ordersController;
 exports.priceTablesController = priceTablesController;
 exports.createPriceTableController = createPriceTableController;
 exports.updatePriceTableController = updatePriceTableController;
+exports.duplicatePriceTableController = duplicatePriceTableController;
+exports.bulkAdjustPriceTablePricesController = bulkAdjustPriceTablePricesController;
+exports.createPriceTableItemFromExistingController = createPriceTableItemFromExistingController;
+exports.updateItemStockController = updateItemStockController;
 exports.deletePriceTableController = deletePriceTableController;
 exports.createPriceTableItemController = createPriceTableItemController;
 exports.updatePriceTableItemController = updatePriceTableItemController;
@@ -106,6 +110,38 @@ async function createPriceTableController(req, res) {
 async function updatePriceTableController(req, res) {
     try {
         return res.json(await (0, supplier_portal_service_1.updatePriceTable)(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), req.body));
+    }
+    catch (error) {
+        return handleError(res, error);
+    }
+}
+async function duplicatePriceTableController(req, res) {
+    try {
+        return res.status(201).json(await (0, supplier_portal_service_1.duplicatePriceTable)(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), req.body));
+    }
+    catch (error) {
+        return handleError(res, error);
+    }
+}
+async function bulkAdjustPriceTablePricesController(req, res) {
+    try {
+        return res.json(await (0, supplier_portal_service_1.bulkAdjustPriceTablePrices)(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), req.body));
+    }
+    catch (error) {
+        return handleError(res, error);
+    }
+}
+async function createPriceTableItemFromExistingController(req, res) {
+    try {
+        return res.status(201).json(await (0, supplier_portal_service_1.createPriceTableItemFromExisting)(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), req.body));
+    }
+    catch (error) {
+        return handleError(res, error);
+    }
+}
+async function updateItemStockController(req, res) {
+    try {
+        return res.json(await (0, supplier_portal_service_1.updateItemStock)(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), getParam(req.params.itemId, 'ITEM_ID'), req.body));
     }
     catch (error) {
         return handleError(res, error);

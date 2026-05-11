@@ -2,6 +2,10 @@ import type { Request, Response } from 'express'
 import {
   createPriceTable,
   createPriceTableItem,
+  createPriceTableItemFromExisting,
+  duplicatePriceTable,
+  bulkAdjustPriceTablePrices,
+  updateItemStock,
   deletePriceTable,
   deletePriceTableItem,
   getDashboard,
@@ -111,6 +115,43 @@ export async function createPriceTableController(req: AuthRequest, res: Response
 export async function updatePriceTableController(req: AuthRequest, res: Response) {
   try {
     return res.json(await updatePriceTable(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), req.body))
+  } catch (error) {
+    return handleError(res, error)
+  }
+}
+
+export async function duplicatePriceTableController(req: AuthRequest, res: Response) {
+  try {
+    return res.status(201).json(await duplicatePriceTable(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), req.body))
+  } catch (error) {
+    return handleError(res, error)
+  }
+}
+
+export async function bulkAdjustPriceTablePricesController(req: AuthRequest, res: Response) {
+  try {
+    return res.json(await bulkAdjustPriceTablePrices(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), req.body))
+  } catch (error) {
+    return handleError(res, error)
+  }
+}
+
+export async function createPriceTableItemFromExistingController(req: AuthRequest, res: Response) {
+  try {
+    return res.status(201).json(await createPriceTableItemFromExisting(getCompanyId(req), getParam(req.params.tableId, 'TABLE_ID'), req.body))
+  } catch (error) {
+    return handleError(res, error)
+  }
+}
+
+export async function updateItemStockController(req: AuthRequest, res: Response) {
+  try {
+    return res.json(await updateItemStock(
+      getCompanyId(req),
+      getParam(req.params.tableId, 'TABLE_ID'),
+      getParam(req.params.itemId, 'ITEM_ID'),
+      req.body
+    ))
   } catch (error) {
     return handleError(res, error)
   }
