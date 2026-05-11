@@ -839,6 +839,8 @@ model Supplier {
   email     String?
   address   String?
   notes     String?
+  photoUrl  String?
+  categories String[] @default([])
   active    Boolean @default(true)
 
   priceTables SupplierPriceTable[]

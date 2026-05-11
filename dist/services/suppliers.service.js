@@ -37,6 +37,22 @@ const SUPPLIER_INCLUDE = {
 function cleanText(value) {
     return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
+function parseCategories(value) {
+    if (Array.isArray(value)) {
+        return value
+            .map((item) => cleanText(item))
+            .filter((item) => Boolean(item))
+            .slice(0, 12);
+    }
+    if (typeof value === 'string') {
+        return value
+            .split(',')
+            .map((item) => cleanText(item))
+            .filter((item) => Boolean(item))
+            .slice(0, 12);
+    }
+    return [];
+}
 function requiredText(value, field) {
     const cleaned = cleanText(value);
     if (!cleaned)
@@ -121,6 +137,8 @@ async function createSupplier(input) {
             email: cleanText(input.email),
             address: cleanText(input.address),
             notes: cleanText(input.notes),
+            photoUrl: cleanText(input.photoUrl),
+            categories: parseCategories(input.categories),
             priceTables: input.createDefaultTable === false ? undefined : {
                 create: { name: 'Tabela padrão' },
             },
@@ -141,6 +159,8 @@ async function updateSupplier(input) {
             email: typeof input.email === 'undefined' ? undefined : cleanText(input.email),
             address: typeof input.address === 'undefined' ? undefined : cleanText(input.address),
             notes: typeof input.notes === 'undefined' ? undefined : cleanText(input.notes),
+            photoUrl: typeof input.photoUrl === 'undefined' ? undefined : cleanText(input.photoUrl),
+            categories: typeof input.categories === 'undefined' ? undefined : parseCategories(input.categories),
             active: typeof input.active === 'boolean' ? input.active : undefined,
         },
         include: SUPPLIER_INCLUDE,

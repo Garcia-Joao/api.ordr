@@ -29,6 +29,26 @@ function cleanText(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
 
+
+function parseCategories(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => cleanText(item))
+      .filter((item): item is string => Boolean(item))
+      .slice(0, 12)
+  }
+
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map((item) => cleanText(item))
+      .filter((item): item is string => Boolean(item))
+      .slice(0, 12)
+  }
+
+  return []
+}
+
 function requiredText(value: unknown, field: string) {
   const cleaned = cleanText(value)
   if (!cleaned) throw new Error(`${field}_REQUIRED`)
@@ -109,6 +129,8 @@ export async function createSupplier(input: {
   email?: string | null
   address?: string | null
   notes?: string | null
+  photoUrl?: string | null
+  categories?: string[] | string | null
   createDefaultTable?: boolean
 }) {
   const name = requiredText(input.name, 'SUPPLIER_NAME')
@@ -123,6 +145,8 @@ export async function createSupplier(input: {
       email: cleanText(input.email),
       address: cleanText(input.address),
       notes: cleanText(input.notes),
+      photoUrl: cleanText(input.photoUrl),
+      categories: parseCategories(input.categories),
       priceTables: input.createDefaultTable === false ? undefined : {
         create: { name: 'Tabela padrão' },
       },
@@ -143,6 +167,8 @@ export async function updateSupplier(input: {
   email?: string | null
   address?: string | null
   notes?: string | null
+  photoUrl?: string | null
+  categories?: string[] | string | null
   active?: boolean
 }) {
   await assertSupplier(input.companyId, input.supplierId)
@@ -157,6 +183,8 @@ export async function updateSupplier(input: {
       email: typeof input.email === 'undefined' ? undefined : cleanText(input.email),
       address: typeof input.address === 'undefined' ? undefined : cleanText(input.address),
       notes: typeof input.notes === 'undefined' ? undefined : cleanText(input.notes),
+      photoUrl: typeof input.photoUrl === 'undefined' ? undefined : cleanText(input.photoUrl),
+      categories: typeof input.categories === 'undefined' ? undefined : parseCategories(input.categories),
       active: typeof input.active === 'boolean' ? input.active : undefined,
     },
     include: SUPPLIER_INCLUDE,
