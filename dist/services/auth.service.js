@@ -70,6 +70,7 @@ function membershipToSafeCompany(membership) {
     return {
         id: membership.company.id,
         name: membership.company.name,
+        companyType: String(membership.company.companyType ?? 'BUSINESS'),
         isTest: membership.company.isTest,
         testSourceCompanyId: membership.company.testSourceCompanyId ?? null,
         role: String(membership.role),

@@ -39,6 +39,11 @@ enum CompanyLicenseStatus {
   REPLACED
 }
 
+enum CompanyType {
+  BUSINESS
+  SUPPLIER
+}
+
 enum DeviceType {
   DESKTOP
   MOBILE
@@ -69,9 +74,10 @@ enum PrintJobType {
 
 model Company {
   id        String   @id @default(cuid())
-  name      String
-  isTest    Boolean  @default(false)
-  createdAt DateTime @default(now())
+  name        String
+  companyType CompanyType @default(BUSINESS)
+  isTest      Boolean  @default(false)
+  createdAt   DateTime @default(now())
 
   platformAccessStatus  CompanyAccessStatus @default(ACTIVE)
   platformBlockedAt     DateTime?

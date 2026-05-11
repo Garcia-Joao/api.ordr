@@ -562,6 +562,9 @@ async function updateCompany(companyId, input) {
             throw new Error('COMPANY_NAME_REQUIRED');
         data.name = name;
     }
+    if (input.companyType !== undefined) {
+        data.companyType = input.companyType;
+    }
     if (input.isTest !== undefined) {
         data.isTest = input.isTest;
     }
@@ -681,6 +684,7 @@ async function createCompanyWithInitialAccess(input) {
         const company = await tx.company.create({
             data: {
                 name: companyName,
+                companyType: input.companyType ?? 'BUSINESS',
                 isTest: input.isTest ?? false,
                 platformAccessStatus: 'ACTIVE',
             },

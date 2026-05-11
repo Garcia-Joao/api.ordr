@@ -1,0 +1,8 @@
+DO $$ BEGIN
+  CREATE TYPE "CompanyType" AS ENUM ('BUSINESS', 'SUPPLIER');
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE "Company"
+  ADD COLUMN IF NOT EXISTS "companyType" "CompanyType" NOT NULL DEFAULT 'BUSINESS';

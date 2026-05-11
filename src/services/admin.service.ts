@@ -1,6 +1,6 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
-import { CompanyLicenseStatus, Prisma } from '@prisma/client'
+import { CompanyLicenseStatus, CompanyType, Prisma } from '@prisma/client'
 import { prisma } from '../lib/prisma'
 
 const ADMIN_COOKIE_NAME = 'admin_auth'
@@ -41,6 +41,7 @@ type UpdateLicensePlanInput = Partial<CreateLicensePlanInput>
 
 type CreateCompanyInput = {
   name: string
+  companyType?: CompanyType | 'BUSINESS' | 'SUPPLIER'
   isTest?: boolean
   ownerUsername: string
   ownerPassword: string
@@ -59,6 +60,7 @@ type UpdateCompanyAccessInput = {
 
 type UpdateCompanyInput = {
   name?: string
+  companyType?: CompanyType | 'BUSINESS' | 'SUPPLIER'
   isTest?: boolean
   platformAccessStatus?: 'ACTIVE' | 'SUSPENDED' | 'BLOCKED' | 'CANCELLED'
   platformBlockedReason?: string | null
@@ -725,6 +727,10 @@ export async function updateCompany(companyId: string, input: UpdateCompanyInput
     data.name = name
   }
 
+  if (input.companyType !== undefined) {
+    data.companyType = input.companyType
+  }
+
   if (input.isTest !== undefined) {
     data.isTest = input.isTest
   }
@@ -872,6 +878,7 @@ export async function createCompanyWithInitialAccess(input: CreateCompanyInput) 
     const company = await tx.company.create({
       data: {
         name: companyName,
+        companyType: input.companyType ?? 'BUSINESS',
         isTest: input.isTest ?? false,
         platformAccessStatus: 'ACTIVE',
       },

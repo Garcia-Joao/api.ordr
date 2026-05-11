@@ -21,6 +21,7 @@ type LicenseInfo = {
 type SafeCompany = LicenseInfo & {
   id: string
   name: string
+  companyType: string
   isTest: boolean
   testSourceCompanyId: string | null
   role: string
@@ -137,6 +138,7 @@ function membershipToSafeCompany(
   return {
     id: membership.company.id,
     name: membership.company.name,
+    companyType: String(membership.company.companyType ?? 'BUSINESS'),
     isTest: membership.company.isTest,
     testSourceCompanyId: membership.company.testSourceCompanyId ?? null,
     role: String(membership.role),
