@@ -1002,6 +1002,7 @@ async function deleteCompany(companyId) {
         throw new Error('ONLY_DISABLED_COMPANIES_CAN_BE_DELETED');
     }
     await prisma_1.prisma.$transaction(async (tx) => {
+        // Keep external/cross-company references valid before the destructive cleanup.
         await tx.company.updateMany({
             where: { testSourceCompanyId: companyId },
             data: { testSourceCompanyId: null },
@@ -1010,6 +1011,117 @@ async function deleteCompany(companyId) {
             where: { supplierCompanyId: companyId },
             data: { supplierCompanyId: null },
         });
+        const productIds = (await tx.product.findMany({
+            where: { companyId },
+            select: { id: true },
+        })).map((product) => product.id);
+        const orderIds = (await tx.order.findMany({
+            where: { companyId },
+            select: { id: true },
+        })).map((order) => order.id);
+        const buyRequestIds = (await tx.buyRequest.findMany({
+            where: { companyId },
+            select: { id: true },
+        })).map((buyRequest) => buyRequest.id);
+        const staffEvaluationIds = (await tx.staffEvaluation.findMany({
+            where: { companyId },
+            select: { id: true },
+        })).map((evaluation) => evaluation.id);
+        const staffEvaluationCriterionIds = (await tx.staffEvaluationCriterion.findMany({
+            where: { companyId },
+            select: { id: true },
+        })).map((criterion) => criterion.id);
+        const variationGroupIds = productIds.length
+            ? (await tx.productVariationGroup.findMany({
+                where: { productId: { in: productIds } },
+                select: { id: true },
+            })).map((group) => group.id)
+            : [];
+        const variationOptionIds = variationGroupIds.length
+            ? (await tx.productVariationOption.findMany({
+                where: { groupId: { in: variationGroupIds } },
+                select: { id: true },
+            })).map((option) => option.id)
+            : [];
+        const orderItemIds = orderIds.length
+            ? (await tx.orderItem.findMany({
+                where: { orderId: { in: orderIds } },
+                select: { id: true },
+            })).map((item) => item.id)
+            : [];
+        const orderItemVariationSelectionIds = orderItemIds.length
+            ? (await tx.orderItemVariationSelection.findMany({
+                where: { orderItemId: { in: orderItemIds } },
+                select: { id: true },
+            })).map((selection) => selection.id)
+            : [];
+        // These tables have required references without DB-level cascade in the
+        // current schema/database. Delete them explicitly before deleting Company,
+        // Product, ProductVariationGroup or ProductVariationOption.
+        if (orderItemVariationSelectionIds.length) {
+            await tx.orderItemVariationSelectionOption.deleteMany({
+                where: { selectionId: { in: orderItemVariationSelectionIds } },
+            });
+        }
+        if (orderItemIds.length) {
+            await tx.orderItemVariationSelection.deleteMany({
+                where: { orderItemId: { in: orderItemIds } },
+            });
+            await tx.orderItem.deleteMany({
+                where: { id: { in: orderItemIds } },
+            });
+        }
+        if (orderIds.length) {
+            await tx.order.deleteMany({
+                where: { id: { in: orderIds } },
+            });
+        }
+        if (buyRequestIds.length || productIds.length) {
+            await tx.buyRequestItem.deleteMany({
+                where: {
+                    OR: [
+                        ...(buyRequestIds.length ? [{ buyRequestId: { in: buyRequestIds } }] : []),
+                        ...(productIds.length ? [{ productId: { in: productIds } }] : []),
+                    ],
+                },
+            });
+        }
+        if (staffEvaluationIds.length || staffEvaluationCriterionIds.length) {
+            await tx.staffEvaluationScore.deleteMany({
+                where: {
+                    OR: [
+                        ...(staffEvaluationIds.length ? [{ evaluationId: { in: staffEvaluationIds } }] : []),
+                        ...(staffEvaluationCriterionIds.length ? [{ criterionId: { in: staffEvaluationCriterionIds } }] : []),
+                    ],
+                },
+            });
+        }
+        if (variationOptionIds.length || productIds.length) {
+            await tx.productVariationOptionRecipeItem.deleteMany({
+                where: {
+                    OR: [
+                        ...(variationOptionIds.length ? [{ optionId: { in: variationOptionIds } }] : []),
+                        ...(productIds.length ? [{ ingredientProductId: { in: productIds } }] : []),
+                    ],
+                },
+            });
+        }
+        if (productIds.length) {
+            await tx.productRecipeItem.deleteMany({
+                where: {
+                    OR: [
+                        { productId: { in: productIds } },
+                        { ingredientProductId: { in: productIds } },
+                    ],
+                },
+            });
+            // Price-table items should be preserved as supplier catalogue history,
+            // but the product pointer must be cleared before products are removed.
+            await tx.supplierPriceTableItem.updateMany({
+                where: { productId: { in: productIds } },
+                data: { productId: null },
+            });
+        }
         await tx.company.delete({
             where: { id: companyId },
         });
