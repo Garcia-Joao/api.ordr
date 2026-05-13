@@ -5,6 +5,10 @@ import {
   createCompanyWithInitialAccess,
   createLicensePlan,
   createUser,
+  deleteCompany,
+  deleteCompanyLicense,
+  deleteLicensePlan,
+  deleteUser,
   getAdminMe,
   deleteCompanyMembership,
   getCompany,
@@ -100,6 +104,76 @@ export async function adminCreateUserController(req: AdminAuthRequest, res: Resp
 
     return res.status(400).json({
       error: error?.message || 'ADMIN_CREATE_USER_ERROR',
+    })
+  }
+}
+
+
+export async function adminDeleteUserController(req: AdminAuthRequest, res: Response) {
+  try {
+    const userId = getParam(req.params.userId, 'userId')
+    const result = await deleteUser(userId)
+
+    return res.json(result)
+  } catch (error: any) {
+    console.error('[admin] delete user error:', error)
+
+    return res.status(400).json({
+      error: error?.message || 'ADMIN_DELETE_USER_ERROR',
+    })
+  }
+}
+
+export async function adminDeleteLicensePlanController(
+  req: AdminAuthRequest,
+  res: Response
+) {
+  try {
+    const id = getParam(req.params.id, 'id')
+    const result = await deleteLicensePlan(id)
+
+    return res.json(result)
+  } catch (error: any) {
+    console.error('[admin] delete license plan error:', error)
+
+    return res.status(400).json({
+      error: error?.message || 'ADMIN_DELETE_LICENSE_PLAN_ERROR',
+    })
+  }
+}
+
+export async function adminDeleteCompanyController(
+  req: AdminAuthRequest,
+  res: Response
+) {
+  try {
+    const companyId = getParam(req.params.companyId, 'companyId')
+    const result = await deleteCompany(companyId)
+
+    return res.json(result)
+  } catch (error: any) {
+    console.error('[admin] delete company error:', error)
+
+    return res.status(400).json({
+      error: error?.message || 'ADMIN_DELETE_COMPANY_ERROR',
+    })
+  }
+}
+
+export async function adminDeleteCompanyLicenseController(
+  req: AdminAuthRequest,
+  res: Response
+) {
+  try {
+    const licenseId = getParam(req.params.licenseId, 'licenseId')
+    const result = await deleteCompanyLicense(licenseId)
+
+    return res.json(result)
+  } catch (error: any) {
+    console.error('[admin] delete company license error:', error)
+
+    return res.status(400).json({
+      error: error?.message || 'ADMIN_DELETE_COMPANY_LICENSE_ERROR',
     })
   }
 }

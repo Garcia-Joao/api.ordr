@@ -4,6 +4,10 @@ exports.adminLoginController = adminLoginController;
 exports.adminLogoutController = adminLogoutController;
 exports.adminMeController = adminMeController;
 exports.adminCreateUserController = adminCreateUserController;
+exports.adminDeleteUserController = adminDeleteUserController;
+exports.adminDeleteLicensePlanController = adminDeleteLicensePlanController;
+exports.adminDeleteCompanyController = adminDeleteCompanyController;
+exports.adminDeleteCompanyLicenseController = adminDeleteCompanyLicenseController;
 exports.adminListLicensePlansController = adminListLicensePlansController;
 exports.adminCreateLicensePlanController = adminCreateLicensePlanController;
 exports.adminUpdateLicensePlanController = adminUpdateLicensePlanController;
@@ -84,6 +88,58 @@ async function adminCreateUserController(req, res) {
         console.error('[admin] create app user error:', error);
         return res.status(400).json({
             error: error?.message || 'ADMIN_CREATE_USER_ERROR',
+        });
+    }
+}
+async function adminDeleteUserController(req, res) {
+    try {
+        const userId = getParam(req.params.userId, 'userId');
+        const result = await (0, admin_service_1.deleteUser)(userId);
+        return res.json(result);
+    }
+    catch (error) {
+        console.error('[admin] delete user error:', error);
+        return res.status(400).json({
+            error: error?.message || 'ADMIN_DELETE_USER_ERROR',
+        });
+    }
+}
+async function adminDeleteLicensePlanController(req, res) {
+    try {
+        const id = getParam(req.params.id, 'id');
+        const result = await (0, admin_service_1.deleteLicensePlan)(id);
+        return res.json(result);
+    }
+    catch (error) {
+        console.error('[admin] delete license plan error:', error);
+        return res.status(400).json({
+            error: error?.message || 'ADMIN_DELETE_LICENSE_PLAN_ERROR',
+        });
+    }
+}
+async function adminDeleteCompanyController(req, res) {
+    try {
+        const companyId = getParam(req.params.companyId, 'companyId');
+        const result = await (0, admin_service_1.deleteCompany)(companyId);
+        return res.json(result);
+    }
+    catch (error) {
+        console.error('[admin] delete company error:', error);
+        return res.status(400).json({
+            error: error?.message || 'ADMIN_DELETE_COMPANY_ERROR',
+        });
+    }
+}
+async function adminDeleteCompanyLicenseController(req, res) {
+    try {
+        const licenseId = getParam(req.params.licenseId, 'licenseId');
+        const result = await (0, admin_service_1.deleteCompanyLicense)(licenseId);
+        return res.json(result);
+    }
+    catch (error) {
+        console.error('[admin] delete company license error:', error);
+        return res.status(400).json({
+            error: error?.message || 'ADMIN_DELETE_COMPANY_LICENSE_ERROR',
         });
     }
 }

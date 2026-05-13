@@ -23,6 +23,10 @@ exports.updateCompanyAccess = updateCompanyAccess;
 exports.assignCompanyLicense = assignCompanyLicense;
 exports.updateCompanyLicense = updateCompanyLicense;
 exports.getAdminMe = getAdminMe;
+exports.deleteCompany = deleteCompany;
+exports.deleteUser = deleteUser;
+exports.deleteLicensePlan = deleteLicensePlan;
+exports.deleteCompanyLicense = deleteCompanyLicense;
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const prisma_1 = require("../lib/prisma");
@@ -972,5 +976,190 @@ async function getAdminMe(adminId) {
     return {
         ok: true,
         admin,
+    };
+}
+async function deleteCompany(companyId) {
+    const company = await prisma_1.prisma.company.findUnique({
+        where: { id: companyId },
+        include: {
+            _count: {
+                select: {
+                    orders: true,
+                    products: true,
+                    customers: true,
+                    memberships: true,
+                    platformLicenses: true,
+                    devices: true,
+                    printJobs: true,
+                },
+            },
+        },
+    });
+    if (!company) {
+        throw new Error('COMPANY_NOT_FOUND');
+    }
+    if (company.platformAccessStatus === 'ACTIVE') {
+        throw new Error('ONLY_DISABLED_COMPANIES_CAN_BE_DELETED');
+    }
+    await prisma_1.prisma.$transaction(async (tx) => {
+        await tx.company.updateMany({
+            where: { testSourceCompanyId: companyId },
+            data: { testSourceCompanyId: null },
+        });
+        await tx.supplier.updateMany({
+            where: { supplierCompanyId: companyId },
+            data: { supplierCompanyId: null },
+        });
+        await tx.company.delete({
+            where: { id: companyId },
+        });
+    });
+    return {
+        ok: true,
+        deleted: {
+            id: company.id,
+            name: company.name,
+            counts: company._count,
+        },
+    };
+}
+async function deleteUser(userId) {
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+            _count: {
+                select: {
+                    memberships: true,
+                    createdOrders: true,
+                    cancelledOrders: true,
+                    createdProducts: true,
+                    updatedProducts: true,
+                    deletedProducts: true,
+                    createdCategories: true,
+                    updatedCategories: true,
+                    deletedCategories: true,
+                    performedStockChanges: true,
+                    auditLogs: true,
+                    createdProductCostHistory: true,
+                    devices: true,
+                },
+            },
+        },
+    });
+    if (!user) {
+        throw new Error('USER_NOT_FOUND');
+    }
+    if (user._count.memberships > 0) {
+        throw new Error('USER_STILL_HAS_COMPANY_ACCESS');
+    }
+    await prisma_1.prisma.$transaction(async (tx) => {
+        await tx.order.updateMany({ where: { createdByUserId: userId }, data: { createdByUserId: null } });
+        await tx.order.updateMany({ where: { cancelledByUserId: userId }, data: { cancelledByUserId: null } });
+        await tx.product.updateMany({ where: { createdByUserId: userId }, data: { createdByUserId: null } });
+        await tx.product.updateMany({ where: { updatedByUserId: userId }, data: { updatedByUserId: null } });
+        await tx.product.updateMany({ where: { deletedByUserId: userId }, data: { deletedByUserId: null } });
+        await tx.category.updateMany({ where: { createdByUserId: userId }, data: { createdByUserId: null } });
+        await tx.category.updateMany({ where: { updatedByUserId: userId }, data: { updatedByUserId: null } });
+        await tx.category.updateMany({ where: { deletedByUserId: userId }, data: { deletedByUserId: null } });
+        await tx.stockMovement.updateMany({ where: { performedByUserId: userId }, data: { performedByUserId: null } });
+        await tx.auditLog.updateMany({ where: { userId }, data: { userId: null } });
+        await tx.productCostHistory.updateMany({ where: { createdByUserId: userId }, data: { createdByUserId: null } });
+        await tx.device.updateMany({ where: { currentUserId: userId }, data: { currentUserId: null } });
+        await tx.user.delete({ where: { id: userId } });
+    });
+    return {
+        ok: true,
+        deleted: {
+            id: user.id,
+            username: user.username,
+            name: user.name,
+            counts: user._count,
+        },
+    };
+}
+async function deleteLicensePlan(id) {
+    const plan = await prisma_1.prisma.licensePlan.findUnique({
+        where: { id },
+        include: {
+            _count: {
+                select: {
+                    companyLicenses: true,
+                },
+            },
+            companyLicenses: {
+                select: {
+                    id: true,
+                    status: true,
+                    company: {
+                        select: {
+                            id: true,
+                            name: true,
+                            platformAccessStatus: true,
+                        },
+                    },
+                },
+            },
+        },
+    });
+    if (!plan) {
+        throw new Error('LICENSE_PLAN_NOT_FOUND');
+    }
+    if (plan.active) {
+        throw new Error('ONLY_INACTIVE_LICENSE_PLANS_CAN_BE_DELETED');
+    }
+    const activeLicense = plan.companyLicenses.find((license) => license.status === 'ACTIVE');
+    if (activeLicense) {
+        throw new Error('LICENSE_PLAN_HAS_ACTIVE_COMPANY_LICENSES');
+    }
+    await prisma_1.prisma.$transaction(async (tx) => {
+        await tx.companyLicense.deleteMany({
+            where: {
+                planId: id,
+                status: { not: 'ACTIVE' },
+            },
+        });
+        await tx.licensePlan.delete({
+            where: { id },
+        });
+    });
+    return {
+        ok: true,
+        deleted: {
+            id: plan.id,
+            name: plan.name,
+            companyLicenses: plan._count.companyLicenses,
+        },
+    };
+}
+async function deleteCompanyLicense(licenseId) {
+    const license = await prisma_1.prisma.companyLicense.findUnique({
+        where: { id: licenseId },
+        include: {
+            company: {
+                select: {
+                    id: true,
+                    name: true,
+                },
+            },
+            plan: true,
+        },
+    });
+    if (!license) {
+        throw new Error('LICENSE_NOT_FOUND');
+    }
+    if (license.status === 'ACTIVE') {
+        throw new Error('ONLY_INACTIVE_COMPANY_LICENSES_CAN_BE_DELETED');
+    }
+    await prisma_1.prisma.companyLicense.delete({
+        where: { id: licenseId },
+    });
+    return {
+        ok: true,
+        deleted: {
+            id: license.id,
+            company: license.company.name,
+            plan: license.plan.name,
+            status: license.status,
+        },
     };
 }

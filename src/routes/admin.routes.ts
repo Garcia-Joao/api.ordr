@@ -4,7 +4,11 @@ import {
   adminCreateCompanyController,
   adminCreateLicensePlanController,
   adminCreateUserController,
+  adminDeleteCompanyController,
+  adminDeleteCompanyLicenseController,
   adminDeleteCompanyMembershipController,
+  adminDeleteLicensePlanController,
+  adminDeleteUserController,
   adminGetCompanyController,
   adminListCompaniesController,
   adminListLicensePlansController,
@@ -29,15 +33,18 @@ adminRouter.get('/auth/me', requirePlatformAdmin, adminMeController)
 
 adminRouter.get('/users', requirePlatformAdmin, adminListUsersController)
 adminRouter.post('/users', requirePlatformAdmin, adminCreateUserController)
+adminRouter.delete('/users/:userId', requirePlatformAdmin, adminDeleteUserController)
 
 adminRouter.get('/license-plans', requirePlatformAdmin, adminListLicensePlansController)
 adminRouter.post('/license-plans', requirePlatformAdmin, adminCreateLicensePlanController)
 adminRouter.put('/license-plans/:id', requirePlatformAdmin, adminUpdateLicensePlanController)
+adminRouter.delete('/license-plans/:id', requirePlatformAdmin, adminDeleteLicensePlanController)
 
 adminRouter.get('/companies', requirePlatformAdmin, adminListCompaniesController)
 adminRouter.post('/companies', requirePlatformAdmin, adminCreateCompanyController)
 adminRouter.get('/companies/:companyId', requirePlatformAdmin, adminGetCompanyController)
 adminRouter.patch('/companies/:companyId', requirePlatformAdmin, adminUpdateCompanyController)
+adminRouter.delete('/companies/:companyId', requirePlatformAdmin, adminDeleteCompanyController)
 adminRouter.patch(
   '/companies/:companyId/access',
   requirePlatformAdmin,
@@ -52,6 +59,11 @@ adminRouter.patch(
   '/company-licenses/:licenseId',
   requirePlatformAdmin,
   adminUpdateCompanyLicenseController
+)
+adminRouter.delete(
+  '/company-licenses/:licenseId',
+  requirePlatformAdmin,
+  adminDeleteCompanyLicenseController
 )
 
 adminRouter.post('/company-memberships', requirePlatformAdmin, adminUpsertCompanyMembershipController)
