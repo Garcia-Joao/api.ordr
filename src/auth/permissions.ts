@@ -44,7 +44,9 @@ export const PERMISSION_CATALOG: PermissionCatalogGroup[] = [
       { key: 'stock.adjust', label: 'Ajustar estoque' },
       { key: 'stock.purchase.create', label: 'Registrar compras' },
       { key: 'stock.quickBuy', label: 'Usar compra rápida' },
+      { key: 'stock.quickAdjust', label: 'Usar estoque rápido' },
       { key: 'buys.view', label: 'Ver compras' },
+      { key: 'buys.create', label: 'Criar solicitações de compra' },
       { key: 'buys.manage', label: 'Gerenciar compras' },
       { key: 'suppliers.view', label: 'Ver fornecedores' },
       { key: 'suppliers.manage', label: 'Gerenciar fornecedores e tabelas de preço' },
@@ -93,6 +95,8 @@ export const PERMISSION_CATALOG: PermissionCatalogGroup[] = [
     permissions: [
       { key: 'settings.view', label: 'Ver configurações' },
       { key: 'settings.update', label: 'Editar configurações' },
+      { key: 'devices.view', label: 'Ver dispositivos e terminais' },
+      { key: 'devices.manage', label: 'Gerenciar dispositivos e terminais' },
       { key: 'printers.view', label: 'Ver impressoras' },
       { key: 'printers.update', label: 'Configurar impressoras' },
       { key: 'printers.test', label: 'Testar impressoras' },

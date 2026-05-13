@@ -12,7 +12,7 @@ import {
 const router = Router()
 
 router.get('/', requireAuth, requirePermission('stock.view', 'pdv.view', 'interno.view', 'stock.quickBuy', 'buys.view', 'buys.manage'), getStockProducts)
-router.post('/movements', requireAuth, requirePermission('stock.adjust'), createStockMovement)
+router.post('/movements', requireAuth, requirePermission('stock.adjust', 'stock.quickAdjust'), createStockMovement)
 router.get(
   '/:productId/movements',
   requireAuth,

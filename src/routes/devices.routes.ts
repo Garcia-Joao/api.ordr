@@ -7,7 +7,7 @@ const router = Router()
 
 router.post('/heartbeat', requireAuth, heartbeat)
 router.post('/terminal-disconnect', requireAuth, disconnectTerminal)
-router.get('/', requireAuth, requirePermission('settings.view'), listDevices)
-router.delete('/:deviceId', requireAuth, requirePermission('settings.view'), deleteDevice)
+router.get('/', requireAuth, requirePermission('devices.view', 'settings.view'), listDevices)
+router.delete('/:deviceId', requireAuth, requirePermission('devices.manage', 'settings.update'), deleteDevice)
 
 export default router
