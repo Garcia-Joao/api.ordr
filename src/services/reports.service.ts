@@ -538,8 +538,21 @@ function statusLabel(status: string) {
 
 const weekdayLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado']
 
+function dateKeyToUtcNoon(key: string) {
+  const [year, month, day] = key.split('-').map(Number)
+  return new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0))
+}
+
+function utcDateToDateKey(date: Date) {
+  const year = date.getUTCFullYear()
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 function weekdayLabel(value: Date | string) {
-  return weekdayLabels[new Date(value).getDay()] ?? '-'
+  const calendarDate = dateKeyToUtcNoon(dateKey(value))
+  return weekdayLabels[calendarDate.getUTCDay()] ?? '-'
 }
 
 function monthPeriodLabel(day: number) {
@@ -555,17 +568,11 @@ function monthPeriodSort(label: string) {
   return 99
 }
 
-function isoWeekStart(value: Date | string) {
-  const date = new Date(value)
-  const day = date.getDay() || 7
-  const start = new Date(date)
-  start.setHours(0, 0, 0, 0)
-  start.setDate(start.getDate() - day + 1)
-  return start
-}
-
 function weekKey(value: Date | string) {
-  return dateKey(isoWeekStart(value))
+  const calendarDate = dateKeyToUtcNoon(dateKey(value))
+  const day = calendarDate.getUTCDay() || 7
+  calendarDate.setUTCDate(calendarDate.getUTCDate() - day + 1)
+  return utcDateToDateKey(calendarDate)
 }
 
 function addMetricRow(
@@ -1081,7 +1088,7 @@ export async function getReportsDashboard(companyId: string, filters: ReportFilt
     const paymentMethod = order.paymentMethod ?? 'unknown'
     const weekStart = weekKey(order.createdAt)
     const dayOfWeek = weekdayLabel(order.createdAt)
-    const monthPeriod = monthPeriodLabel(new Date(order.createdAt).getDate())
+    const monthPeriod = monthPeriodLabel(Number(getBrazilDateTimeParts(order.createdAt).day))
 
     addMetricRow(
       bestHourByDayMap,
