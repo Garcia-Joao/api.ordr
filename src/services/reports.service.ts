@@ -103,20 +103,35 @@ function brazilLocalDateTimeToUtc(dateValue: string, timeValue: string, endOfMin
   ))
 }
 
+function parseDateRange(fromDate?: string, toDate?: string, fromTime?: string, toTime?: string) {
+  const start = isValidDateInput(fromDate)
+    ? brazilLocalDateTimeToUtc(fromDate!, normalizeTimeInput(fromTime, '00:00'))
+    : null
+  const end = isValidDateInput(toDate)
+    ? brazilLocalDateTimeToUtc(toDate!, normalizeTimeInput(toTime, '23:59'), true)
+    : null
+
+  return { start, end }
+}
+
 function parseDateFilter(fromDate?: string, toDate?: string, fromTime?: string, toTime?: string) {
+  const { start, end } = parseDateRange(fromDate, toDate, fromTime, toTime)
   const createdAt: Prisma.DateTimeFilter = {}
 
-  if (isValidDateInput(fromDate)) {
-    const start = brazilLocalDateTimeToUtc(fromDate!, normalizeTimeInput(fromTime, '00:00'))
-    if (start) createdAt.gte = start
-  }
-
-  if (isValidDateInput(toDate)) {
-    const end = brazilLocalDateTimeToUtc(toDate!, normalizeTimeInput(toTime, '23:59'), true)
-    if (end) createdAt.lte = end
-  }
+  if (start) createdAt.gte = start
+  if (end) createdAt.lte = end
 
   return Object.keys(createdAt).length ? createdAt : undefined
+}
+
+function orderIsInsideBrazilianFilter(order: Pick<OrderForReport, 'createdAt'>, filters: ReportFilters) {
+  const { start, end } = parseDateRange(filters.fromDate, filters.toDate, filters.fromTime, filters.toTime)
+  const createdAt = order.createdAt.getTime()
+
+  if (start && createdAt < start.getTime()) return false
+  if (end && createdAt > end.getTime()) return false
+
+  return true
 }
 
 function getBrazilDateTimeParts(value: Date | string) {
@@ -573,6 +588,16 @@ function addMetricRow(
 }
 
 
+type PeriodEvent = {
+  eventDateId: string
+  title: string
+  startAt: string
+  endAt: string | null
+  orders: number
+  paidOrders: number
+  revenue: number
+}
+
 type ReportPeriod = {
   id: string
   label: string
@@ -591,6 +616,11 @@ type ReportPeriod = {
   profit: number
   averageTicket: number
   itemsSold: number
+  eventDateId: string | null
+  eventTitle: string | null
+  eventStartAt: string | null
+  eventEndAt: string | null
+  events: PeriodEvent[]
   paymentMethods: Array<{ paymentMethod: string; label: string; orders: number; revenue: number }>
   topProducts: Array<{ productId: string; name: string; quantity: number; revenue: number }>
 }
@@ -618,14 +648,31 @@ function createEmptyPeriod(order: OrderForReport, index: number): ReportPeriod {
     profit: 0,
     averageTicket: 0,
     itemsSold: 0,
+    eventDateId: null,
+    eventTitle: null,
+    eventStartAt: null,
+    eventEndAt: null,
+    events: [],
     paymentMethods: [],
     topProducts: [],
   }
 }
 
-function buildReportPeriods(orders: OrderForReport[], normalizeMoneyObject: <T extends Record<string, any>>(item: T) => T) {
+function eventEndForPeriod(event: { startAt: Date; endAt?: Date | null }) {
+  return event.endAt ?? new Date(event.startAt.getTime() + SIX_HOURS_MS)
+}
+
+function rangesOverlap(startA: Date, endA: Date, startB: Date, endB: Date) {
+  return startA.getTime() <= endB.getTime() && endA.getTime() >= startB.getTime()
+}
+
+function buildReportPeriods(
+  orders: OrderForReport[],
+  events: Array<{ id: string; title: string; startAt: Date; endAt?: Date | null }>,
+  normalizeMoneyObject: <T extends Record<string, any>>(item: T) => T
+) {
   const sortedOrders = [...orders].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
-  const periods: Array<ReportPeriod & { _paymentMap: Map<string, any>; _productMap: Map<string, any> }> = []
+  const periods: Array<ReportPeriod & { _paymentMap: Map<string, any>; _productMap: Map<string, any>; _eventMap: Map<string, PeriodEvent> }> = []
 
   for (const order of sortedOrders) {
     const previousPeriod = periods[periods.length - 1]
@@ -637,6 +684,7 @@ function buildReportPeriods(orders: OrderForReport[], normalizeMoneyObject: <T e
             ...createEmptyPeriod(order, periods.length + 1),
             _paymentMap: new Map<string, any>(),
             _productMap: new Map<string, any>(),
+            _eventMap: new Map<string, PeriodEvent>(),
           }
           periods.push(next)
           return next
@@ -653,6 +701,22 @@ function buildReportPeriods(orders: OrderForReport[], normalizeMoneyObject: <T e
 
     const orderRevenue = order.status === 'paid' ? toNumber(order.total) : 0
     const orderCost = order.status === 'paid' ? estimateOrderCost(order) : 0
+
+    if (order.eventDate) {
+      const periodEvent = period._eventMap.get(order.eventDate.id) ?? {
+        eventDateId: order.eventDate.id,
+        title: order.eventDate.title,
+        startAt: order.eventDate.startAt.toISOString(),
+        endAt: order.eventDate.endAt?.toISOString() ?? null,
+        orders: 0,
+        paidOrders: 0,
+        revenue: 0,
+      }
+      periodEvent.orders += 1
+      periodEvent.paidOrders += order.status === 'paid' ? 1 : 0
+      periodEvent.revenue += orderRevenue
+      period._eventMap.set(order.eventDate.id, periodEvent)
+    }
     period.revenue += orderRevenue
     period.cost += orderCost
     period.profit = period.revenue - period.cost
@@ -698,9 +762,37 @@ function buildReportPeriods(orders: OrderForReport[], normalizeMoneyObject: <T e
       .slice(0, 10)
       .map(normalizeMoneyObject)
 
-    const { _paymentMap, _productMap, ...publicPeriod } = period
+    const periodStart = new Date(period.startAt)
+    const periodEnd = new Date(period.endAt)
+
+    for (const event of events) {
+      if (!rangesOverlap(periodStart, periodEnd, event.startAt, eventEndForPeriod(event))) continue
+      if (period._eventMap.has(event.id)) continue
+
+      period._eventMap.set(event.id, {
+        eventDateId: event.id,
+        title: event.title,
+        startAt: event.startAt.toISOString(),
+        endAt: event.endAt?.toISOString() ?? null,
+        orders: 0,
+        paidOrders: 0,
+        revenue: 0,
+      })
+    }
+
+    const periodEvents = [...period._eventMap.values()]
+      .sort((a, b) => b.revenue - a.revenue || b.paidOrders - a.paidOrders || new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
+      .map(normalizeMoneyObject)
+    const primaryEvent = periodEvents[0] ?? null
+
+    const { _paymentMap, _productMap, _eventMap, ...publicPeriod } = period
     return normalizeMoneyObject({
       ...publicPeriod,
+      eventDateId: primaryEvent?.eventDateId ?? null,
+      eventTitle: primaryEvent?.title ?? null,
+      eventStartAt: primaryEvent?.startAt ?? null,
+      eventEndAt: primaryEvent?.endAt ?? null,
+      events: periodEvents,
       paymentMethods,
       topProducts,
       itemsSold: round(publicPeriod.itemsSold, 2),
@@ -767,6 +859,39 @@ function buildWhere(companyId: string, filters: ReportFilters) {
   return where
 }
 
+
+function buildPeriodEventWhere(companyId: string, filters: ReportFilters) {
+  const { start, end } = parseDateRange(filters.fromDate, filters.toDate, filters.fromTime, filters.toTime)
+  const where: Prisma.EventDateWhereInput = { companyId }
+  const andFilters: Prisma.EventDateWhereInput[] = []
+
+  if (filters.eventDateId && filters.eventDateId !== 'all') where.id = filters.eventDateId
+  if (filters.salesEnvironmentId && filters.salesEnvironmentId !== 'all') where.salesEnvironmentId = filters.salesEnvironmentId
+
+  if (start && end) {
+    const openEventStartLimit = new Date(start.getTime() - SIX_HOURS_MS)
+    andFilters.push({
+      OR: [
+        { AND: [{ startAt: { lte: end } }, { endAt: { gte: start } }] },
+        { AND: [{ startAt: { gte: openEventStartLimit } }, { startAt: { lte: end } }, { endAt: null }] },
+      ],
+    })
+  } else if (start) {
+    const openEventStartLimit = new Date(start.getTime() - SIX_HOURS_MS)
+    andFilters.push({
+      OR: [
+        { endAt: { gte: start } },
+        { AND: [{ startAt: { gte: openEventStartLimit } }, { endAt: null }] },
+      ],
+    })
+  } else if (end) {
+    andFilters.push({ startAt: { lte: end } })
+  }
+
+  if (andFilters.length > 0) where.AND = andFilters
+  return where
+}
+
 export async function getReportFilters(companyId: string) {
   const [events, environments, categories, products, customers, internalCustomers] = await Promise.all([
     prisma.eventDate.findMany({
@@ -815,7 +940,7 @@ export async function getReportFilters(companyId: string) {
 export async function getReportsDashboard(companyId: string, filters: ReportFilters) {
   const where = buildWhere(companyId, filters)
 
-  const orders = await prisma.order.findMany({
+  const fetchedOrders = await prisma.order.findMany({
     where,
     orderBy: { createdAt: 'desc' },
     include: {
@@ -877,6 +1002,16 @@ export async function getReportsDashboard(companyId: string, filters: ReportFilt
         },
       },
     },
+  })
+
+  // Safety net: all report calculations below use the Brazilian date/time window,
+  // even if the database/server timezone behaves differently in production.
+  const orders = fetchedOrders.filter((order) => orderIsInsideBrazilianFilter(order, filters))
+
+  const periodEvents = await prisma.eventDate.findMany({
+    where: buildPeriodEventWhere(companyId, filters),
+    orderBy: { startAt: 'asc' },
+    select: { id: true, title: true, startAt: true, endAt: true },
   })
 
   const paidOrders = orders.filter((order) => order.status === 'paid')
@@ -1258,7 +1393,7 @@ export async function getReportsDashboard(companyId: string, filters: ReportFilt
     return next as T
   }
 
-  const periods = buildReportPeriods(orders, normalizeMoneyObject)
+  const periods = buildReportPeriods(orders, periodEvents, normalizeMoneyObject)
 
   return {
     filters: {
