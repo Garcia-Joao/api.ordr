@@ -7,6 +7,8 @@ type ReportPaymentFilter = PaymentMethod | 'unknown' | 'all'
 type ReportFilters = {
   fromDate?: string
   toDate?: string
+  fromTime?: string
+  toTime?: string
   status?: ReportStatusFilter
   paymentMethod?: ReportPaymentFilter
   eventDateId?: string
@@ -62,32 +64,96 @@ function round(value: number, digits = 2) {
   return Math.round((value + Number.EPSILON) * factor) / factor
 }
 
-function parseDateFilter(fromDate?: string, toDate?: string) {
-  const createdAt: Prisma.DateTimeFilter = {}
+const BRAZIL_TIME_ZONE = 'America/Sao_Paulo'
+const SAO_PAULO_UTC_OFFSET_HOURS = 3
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000
 
-  if (fromDate) {
-    const [year, month, day] = fromDate.split('-').map(Number)
-    if (year && month && day) {
-      createdAt.gte = new Date(year, month - 1, day, 0, 0, 0, 0)
-    }
+function isValidDateInput(value?: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value ?? '')
+}
+
+function normalizeTimeInput(value: unknown, fallback: string) {
+  if (typeof value !== 'string') return fallback
+  const match = value.match(/^(\d{1,2}):(\d{2})$/)
+  if (!match) return fallback
+
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+    return fallback
   }
 
-  if (toDate) {
-    const [year, month, day] = toDate.split('-').map(Number)
-    if (year && month && day) {
-      createdAt.lte = new Date(year, month - 1, day, 23, 59, 59, 999)
-    }
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+}
+
+function brazilLocalDateTimeToUtc(dateValue: string, timeValue: string, endOfMinute = false) {
+  const [year, month, day] = dateValue.split('-').map(Number)
+  const [hour, minute] = normalizeTimeInput(timeValue, endOfMinute ? '23:59' : '00:00').split(':').map(Number)
+
+  if (!year || !month || !day) return null
+
+  return new Date(Date.UTC(
+    year,
+    month - 1,
+    day,
+    hour + SAO_PAULO_UTC_OFFSET_HOURS,
+    minute,
+    endOfMinute ? 59 : 0,
+    endOfMinute ? 999 : 0
+  ))
+}
+
+function parseDateFilter(fromDate?: string, toDate?: string, fromTime?: string, toTime?: string) {
+  const createdAt: Prisma.DateTimeFilter = {}
+
+  if (isValidDateInput(fromDate)) {
+    const start = brazilLocalDateTimeToUtc(fromDate!, normalizeTimeInput(fromTime, '00:00'))
+    if (start) createdAt.gte = start
+  }
+
+  if (isValidDateInput(toDate)) {
+    const end = brazilLocalDateTimeToUtc(toDate!, normalizeTimeInput(toTime, '23:59'), true)
+    if (end) createdAt.lte = end
   }
 
   return Object.keys(createdAt).length ? createdAt : undefined
 }
 
+function getBrazilDateTimeParts(value: Date | string) {
+  const date = value instanceof Date ? value : new Date(value)
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: BRAZIL_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date)
+
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? ''
+
+  return {
+    year: part('year'),
+    month: part('month'),
+    day: part('day'),
+    hour: part('hour') === '24' ? '00' : part('hour'),
+    minute: part('minute'),
+  }
+}
+
 function dateKey(value: Date | string) {
-  return new Date(value).toISOString().slice(0, 10)
+  const parts = getBrazilDateTimeParts(value)
+  return `${parts.year}-${parts.month}-${parts.day}`
 }
 
 function hourKey(value: Date | string) {
-  return String(new Date(value).getHours()).padStart(2, '0') + ':00'
+  return `${getBrazilDateTimeParts(value).hour}:00`
+}
+
+function timeKey(value: Date | string) {
+  const parts = getBrazilDateTimeParts(value)
+  return `${parts.hour}:${parts.minute}`
 }
 
 function normalizeToBaseUnit(quantity: number, unit?: string | null) {
@@ -437,6 +503,7 @@ function paymentLabel(method: string | null) {
     pix: 'Pix',
     credit: 'Crédito',
     debit: 'Débito',
+    discount: 'Desconto',
     unknown: 'Sem método',
   }
 
@@ -505,8 +572,144 @@ function addMetricRow(
   return row
 }
 
+
+type ReportPeriod = {
+  id: string
+  label: string
+  startAt: string
+  endAt: string
+  startDate: string
+  endDate: string
+  startTime: string
+  endTime: string
+  orders: number
+  paidOrders: number
+  pendingOrders: number
+  cancelledOrders: number
+  revenue: number
+  cost: number
+  profit: number
+  averageTicket: number
+  itemsSold: number
+  paymentMethods: Array<{ paymentMethod: string; label: string; orders: number; revenue: number }>
+  topProducts: Array<{ productId: string; name: string; quantity: number; revenue: number }>
+}
+
+function createEmptyPeriod(order: OrderForReport, index: number): ReportPeriod {
+  const createdAt = order.createdAt.toISOString()
+  const date = dateKey(order.createdAt)
+  const time = timeKey(order.createdAt)
+
+  return {
+    id: `period-${index}`,
+    label: `Período ${index}`,
+    startAt: createdAt,
+    endAt: createdAt,
+    startDate: date,
+    endDate: date,
+    startTime: time,
+    endTime: time,
+    orders: 0,
+    paidOrders: 0,
+    pendingOrders: 0,
+    cancelledOrders: 0,
+    revenue: 0,
+    cost: 0,
+    profit: 0,
+    averageTicket: 0,
+    itemsSold: 0,
+    paymentMethods: [],
+    topProducts: [],
+  }
+}
+
+function buildReportPeriods(orders: OrderForReport[], normalizeMoneyObject: <T extends Record<string, any>>(item: T) => T) {
+  const sortedOrders = [...orders].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  const periods: Array<ReportPeriod & { _paymentMap: Map<string, any>; _productMap: Map<string, any> }> = []
+
+  for (const order of sortedOrders) {
+    const previousPeriod = periods[periods.length - 1]
+    const previousOrderAt = previousPeriod ? new Date(previousPeriod.endAt).getTime() : null
+    const shouldStartNewPeriod = previousOrderAt == null || order.createdAt.getTime() - previousOrderAt > SIX_HOURS_MS
+    const period = shouldStartNewPeriod
+      ? (() => {
+          const next = {
+            ...createEmptyPeriod(order, periods.length + 1),
+            _paymentMap: new Map<string, any>(),
+            _productMap: new Map<string, any>(),
+          }
+          periods.push(next)
+          return next
+        })()
+      : previousPeriod
+
+    period.endAt = order.createdAt.toISOString()
+    period.endDate = dateKey(order.createdAt)
+    period.endTime = timeKey(order.createdAt)
+    period.orders += 1
+    if (order.status === 'paid') period.paidOrders += 1
+    if (order.status === 'pending') period.pendingOrders += 1
+    if (order.status === 'cancelled') period.cancelledOrders += 1
+
+    const orderRevenue = order.status === 'paid' ? toNumber(order.total) : 0
+    const orderCost = order.status === 'paid' ? estimateOrderCost(order) : 0
+    period.revenue += orderRevenue
+    period.cost += orderCost
+    period.profit = period.revenue - period.cost
+    period.averageTicket = period.paidOrders > 0 ? period.revenue / period.paidOrders : 0
+
+    const paymentMethod = order.paymentMethod ?? 'unknown'
+    const payment = period._paymentMap.get(paymentMethod) ?? {
+      paymentMethod,
+      label: paymentLabel(paymentMethod),
+      orders: 0,
+      revenue: 0,
+    }
+    payment.orders += order.status === 'paid' ? 1 : 0
+    payment.revenue += orderRevenue
+    period._paymentMap.set(paymentMethod, payment)
+
+    for (const item of order.items) {
+      const quantity = order.status === 'paid' ? toNumber(item.quantity) : 0
+      const revenue = order.status === 'paid' ? toNumber(item.totalPrice) : 0
+      period.itemsSold += quantity
+
+      const product = period._productMap.get(item.productId) ?? {
+        productId: item.productId,
+        name: item.product.name,
+        quantity: 0,
+        revenue: 0,
+      }
+      product.quantity += quantity
+      product.revenue += revenue
+      period._productMap.set(item.productId, product)
+    }
+  }
+
+  return periods.map((period) => {
+    const paymentMethods = [...period._paymentMap.values()]
+      .filter((item) => item.orders > 0 || item.revenue > 0)
+      .sort((a, b) => b.revenue - a.revenue)
+      .map(normalizeMoneyObject)
+
+    const topProducts = [...period._productMap.values()]
+      .filter((item) => item.quantity > 0 || item.revenue > 0)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10)
+      .map(normalizeMoneyObject)
+
+    const { _paymentMap, _productMap, ...publicPeriod } = period
+    return normalizeMoneyObject({
+      ...publicPeriod,
+      paymentMethods,
+      topProducts,
+      itemsSold: round(publicPeriod.itemsSold, 2),
+    })
+  })
+}
+
 function buildWhere(companyId: string, filters: ReportFilters) {
-  const createdAt = parseDateFilter(filters.fromDate, filters.toDate)
+  const createdAt = parseDateFilter(filters.fromDate, filters.toDate, filters.fromTime, filters.toTime)
   const where: Prisma.OrderWhereInput = {
     companyId,
     ...(createdAt ? { createdAt } : {}),
@@ -1055,8 +1258,14 @@ export async function getReportsDashboard(companyId: string, filters: ReportFilt
     return next as T
   }
 
+  const periods = buildReportPeriods(orders, normalizeMoneyObject)
+
   return {
-    filters,
+    filters: {
+      ...filters,
+      fromTime: normalizeTimeInput(filters.fromTime, '00:00'),
+      toTime: normalizeTimeInput(filters.toTime, '23:59'),
+    },
     summary: {
       totalOrders: orders.length,
       paidOrders: paidOrders.length,
@@ -1091,6 +1300,7 @@ export async function getReportsDashboard(companyId: string, filters: ReportFilt
       monthPeriodPerformance: monthPeriodPerformance.map(normalizeMoneyObject),
       weekdayPerformance: weekdayPerformance.map(normalizeMoneyObject),
       ticketByEvent: ticketByEvent.map(normalizeMoneyObject),
+      periods,
     },
     charts: {
       salesByDay: [...salesByDay.values()].sort((a, b) => a.date.localeCompare(b.date)).map(normalizeMoneyObject),
@@ -1110,6 +1320,7 @@ export async function getReportsDashboard(companyId: string, filters: ReportFilt
       monthPeriodPerformance: monthPeriodPerformance.map(normalizeMoneyObject),
       weekdayPerformance: weekdayPerformance.map(normalizeMoneyObject),
       customers: topCustomers.map(normalizeMoneyObject),
+      periods,
     },
     tables: {
       products: [...productRows].sort((a, b) => b.revenue - a.revenue).map(normalizeMoneyObject),
@@ -1123,6 +1334,7 @@ export async function getReportsDashboard(companyId: string, filters: ReportFilt
       weekdayPerformance: weekdayPerformance.map(normalizeMoneyObject),
       environments: salesEnvironmentPerformance.map(normalizeMoneyObject),
       customers: topCustomers.map(normalizeMoneyObject),
+      periods,
       recentOrders: orders.slice(0, 50).map((order) => ({
         id: order.id,
         comanda: order.comanda,

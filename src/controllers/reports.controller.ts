@@ -47,6 +47,8 @@ export async function getReportsDashboardController(req: AuthRequest, res: Respo
       await getReportsDashboard(companyId, {
         fromDate: getQueryString(req, 'fromDate'),
         toDate: getQueryString(req, 'toDate'),
+        fromTime: getQueryString(req, 'fromTime'),
+        toTime: getQueryString(req, 'toTime'),
         status: getQueryString(req, 'status') as any,
         paymentMethod: getQueryString(req, 'paymentMethod') as any,
         eventDateId: getQueryString(req, 'eventDateId'),
