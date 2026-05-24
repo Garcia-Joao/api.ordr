@@ -46,7 +46,8 @@ async function getProducts(req, res) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
         const includeInactive = req.query.includeInactive === 'true';
-        const products = await productsService.getProductsByCompany(companyId, includeInactive);
+        const menu = req.query.menu === 'active' ? 'active' : 'all';
+        const products = await productsService.getProductsByCompany(companyId, includeInactive, { menu });
         return res.json(products);
     }
     catch (error) {

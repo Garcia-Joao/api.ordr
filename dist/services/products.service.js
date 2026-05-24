@@ -393,6 +393,11 @@ async function validateRecipeCycle(companyId, productId, recipeItems, visited = 
 const productInclude = {
     category: true,
     printPort: true,
+    menuItems: {
+        include: {
+            menu: true,
+        },
+    },
     environmentPrices: {
         include: {
             salesEnvironment: true,
@@ -477,7 +482,35 @@ async function ensureVariationOptionIngredientsBelongToCompany(variationGroups, 
         }
     }
 }
-async function getProductsByCompany(companyId, includeInactive = false) {
+function applyActiveMenuToProducts(products, activeMenu) {
+    if (!activeMenu)
+        return products;
+    const menuItemsByProductId = new Map((activeMenu.items ?? [])
+        .filter((item) => item.active)
+        .map((item) => [item.productId, item]));
+    return products
+        .map((product) => {
+        const menuItem = menuItemsByProductId.get(product.id);
+        if (!menuItem)
+            return null;
+        return {
+            ...product,
+            price: Number(menuItem.price),
+            menuPrice: Number(menuItem.price),
+            activeMenuId: activeMenu.id,
+            activeMenuName: activeMenu.name,
+            menuItemId: menuItem.id,
+        };
+    })
+        .filter(Boolean);
+}
+async function getProductsByCompany(companyId, includeInactive = false, options = {}) {
+    const activeMenu = options.menu === 'active'
+        ? await prisma_1.prisma.menu.findFirst({
+            where: { companyId, active: true },
+            include: { items: true },
+        })
+        : null;
     const products = await prisma_1.prisma.product.findMany({
         where: {
             companyId,
@@ -489,7 +522,10 @@ async function getProductsByCompany(companyId, includeInactive = false) {
             createdAt: "desc",
         },
     });
-    return products.map(normalizeProduct);
+    const normalizedProducts = products.map(normalizeProduct);
+    return options.menu === 'active'
+        ? applyActiveMenuToProducts(normalizedProducts, activeMenu)
+        : normalizedProducts;
 }
 async function getProductById(productId, companyId) {
     const product = await prisma_1.prisma.product.findFirst({

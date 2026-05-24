@@ -34,6 +34,8 @@ async function getReportsDashboardController(req, res) {
         return res.json(await (0, reports_service_1.getReportsDashboard)(companyId, {
             fromDate: getQueryString(req, 'fromDate'),
             toDate: getQueryString(req, 'toDate'),
+            fromTime: getQueryString(req, 'fromTime'),
+            toTime: getQueryString(req, 'toTime'),
             status: getQueryString(req, 'status'),
             paymentMethod: getQueryString(req, 'paymentMethod'),
             eventDateId: getQueryString(req, 'eventDateId'),

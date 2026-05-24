@@ -13,27 +13,89 @@ function round(value, digits = 2) {
     const factor = 10 ** digits;
     return Math.round((value + Number.EPSILON) * factor) / factor;
 }
-function parseDateFilter(fromDate, toDate) {
+const BRAZIL_TIME_ZONE = 'America/Sao_Paulo';
+const SAO_PAULO_UTC_OFFSET_HOURS = 3;
+const SIX_HOURS_MS = 6 * 60 * 60 * 1000;
+function isValidDateInput(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(value ?? '');
+}
+function normalizeTimeInput(value, fallback) {
+    if (typeof value !== 'string')
+        return fallback;
+    const match = value.match(/^(\d{1,2}):(\d{2})$/);
+    if (!match)
+        return fallback;
+    const hour = Number(match[1]);
+    const minute = Number(match[2]);
+    if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+        return fallback;
+    }
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+}
+function brazilLocalDateTimeToUtc(dateValue, timeValue, endOfMinute = false) {
+    const [year, month, day] = dateValue.split('-').map(Number);
+    const [hour, minute] = normalizeTimeInput(timeValue, endOfMinute ? '23:59' : '00:00').split(':').map(Number);
+    if (!year || !month || !day)
+        return null;
+    return new Date(Date.UTC(year, month - 1, day, hour + SAO_PAULO_UTC_OFFSET_HOURS, minute, endOfMinute ? 59 : 0, endOfMinute ? 999 : 0));
+}
+function parseDateRange(fromDate, toDate, fromTime, toTime) {
+    const start = isValidDateInput(fromDate)
+        ? brazilLocalDateTimeToUtc(fromDate, normalizeTimeInput(fromTime, '00:00'))
+        : null;
+    const end = isValidDateInput(toDate)
+        ? brazilLocalDateTimeToUtc(toDate, normalizeTimeInput(toTime, '23:59'), true)
+        : null;
+    return { start, end };
+}
+function parseDateFilter(fromDate, toDate, fromTime, toTime) {
+    const { start, end } = parseDateRange(fromDate, toDate, fromTime, toTime);
     const createdAt = {};
-    if (fromDate) {
-        const [year, month, day] = fromDate.split('-').map(Number);
-        if (year && month && day) {
-            createdAt.gte = new Date(year, month - 1, day, 0, 0, 0, 0);
-        }
-    }
-    if (toDate) {
-        const [year, month, day] = toDate.split('-').map(Number);
-        if (year && month && day) {
-            createdAt.lte = new Date(year, month - 1, day, 23, 59, 59, 999);
-        }
-    }
+    if (start)
+        createdAt.gte = start;
+    if (end)
+        createdAt.lte = end;
     return Object.keys(createdAt).length ? createdAt : undefined;
 }
+function orderIsInsideBrazilianFilter(order, filters) {
+    const { start, end } = parseDateRange(filters.fromDate, filters.toDate, filters.fromTime, filters.toTime);
+    const createdAt = order.createdAt.getTime();
+    if (start && createdAt < start.getTime())
+        return false;
+    if (end && createdAt > end.getTime())
+        return false;
+    return true;
+}
+function getBrazilDateTimeParts(value) {
+    const date = value instanceof Date ? value : new Date(value);
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: BRAZIL_TIME_ZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    }).formatToParts(date);
+    const part = (type) => parts.find((item) => item.type === type)?.value ?? '';
+    return {
+        year: part('year'),
+        month: part('month'),
+        day: part('day'),
+        hour: part('hour') === '24' ? '00' : part('hour'),
+        minute: part('minute'),
+    };
+}
 function dateKey(value) {
-    return new Date(value).toISOString().slice(0, 10);
+    const parts = getBrazilDateTimeParts(value);
+    return `${parts.year}-${parts.month}-${parts.day}`;
 }
 function hourKey(value) {
-    return String(new Date(value).getHours()).padStart(2, '0') + ':00';
+    return `${getBrazilDateTimeParts(value).hour}:00`;
+}
+function timeKey(value) {
+    const parts = getBrazilDateTimeParts(value);
+    return `${parts.hour}:${parts.minute}`;
 }
 function normalizeToBaseUnit(quantity, unit) {
     if (!Number.isFinite(quantity))
@@ -308,6 +370,7 @@ function paymentLabel(method) {
         pix: 'Pix',
         credit: 'Crédito',
         debit: 'Débito',
+        discount: 'Desconto',
         unknown: 'Sem método',
     };
     return labels[method ?? 'unknown'] ?? method ?? 'Sem método';
@@ -321,8 +384,19 @@ function statusLabel(status) {
     return labels[status] ?? status;
 }
 const weekdayLabels = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+function dateKeyToUtcNoon(key) {
+    const [year, month, day] = key.split('-').map(Number);
+    return new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+}
+function utcDateToDateKey(date) {
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
 function weekdayLabel(value) {
-    return weekdayLabels[new Date(value).getDay()] ?? '-';
+    const calendarDate = dateKeyToUtcNoon(dateKey(value));
+    return weekdayLabels[calendarDate.getUTCDay()] ?? '-';
 }
 function monthPeriodLabel(day) {
     if (day <= 10)
@@ -340,16 +414,11 @@ function monthPeriodSort(label) {
         return 3;
     return 99;
 }
-function isoWeekStart(value) {
-    const date = new Date(value);
-    const day = date.getDay() || 7;
-    const start = new Date(date);
-    start.setHours(0, 0, 0, 0);
-    start.setDate(start.getDate() - day + 1);
-    return start;
-}
 function weekKey(value) {
-    return dateKey(isoWeekStart(value));
+    const calendarDate = dateKeyToUtcNoon(dateKey(value));
+    const day = calendarDate.getUTCDay() || 7;
+    calendarDate.setUTCDate(calendarDate.getUTCDate() - day + 1);
+    return utcDateToDateKey(calendarDate);
 }
 function addMetricRow(map, key, seed, orderRevenue, orderCost, orderStatus) {
     const row = map.get(key) ?? { ...seed };
@@ -362,8 +431,165 @@ function addMetricRow(map, key, seed, orderRevenue, orderCost, orderStatus) {
     map.set(key, row);
     return row;
 }
+function createEmptyPeriod(order, index) {
+    const createdAt = order.createdAt.toISOString();
+    const date = dateKey(order.createdAt);
+    const time = timeKey(order.createdAt);
+    return {
+        id: `period-${index}`,
+        label: `Período ${index}`,
+        startAt: createdAt,
+        endAt: createdAt,
+        startDate: date,
+        endDate: date,
+        startTime: time,
+        endTime: time,
+        orders: 0,
+        paidOrders: 0,
+        pendingOrders: 0,
+        cancelledOrders: 0,
+        revenue: 0,
+        cost: 0,
+        profit: 0,
+        averageTicket: 0,
+        itemsSold: 0,
+        eventDateId: null,
+        eventTitle: null,
+        eventStartAt: null,
+        eventEndAt: null,
+        events: [],
+        paymentMethods: [],
+        topProducts: [],
+    };
+}
+function eventEndForPeriod(event) {
+    return event.endAt ?? new Date(event.startAt.getTime() + SIX_HOURS_MS);
+}
+function rangesOverlap(startA, endA, startB, endB) {
+    return startA.getTime() <= endB.getTime() && endA.getTime() >= startB.getTime();
+}
+function buildReportPeriods(orders, events, normalizeMoneyObject) {
+    const sortedOrders = [...orders].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    const periods = [];
+    for (const order of sortedOrders) {
+        const previousPeriod = periods[periods.length - 1];
+        const previousOrderAt = previousPeriod ? new Date(previousPeriod.endAt).getTime() : null;
+        const shouldStartNewPeriod = previousOrderAt == null || order.createdAt.getTime() - previousOrderAt > SIX_HOURS_MS;
+        const period = shouldStartNewPeriod
+            ? (() => {
+                const next = {
+                    ...createEmptyPeriod(order, periods.length + 1),
+                    _paymentMap: new Map(),
+                    _productMap: new Map(),
+                    _eventMap: new Map(),
+                };
+                periods.push(next);
+                return next;
+            })()
+            : previousPeriod;
+        period.endAt = order.createdAt.toISOString();
+        period.endDate = dateKey(order.createdAt);
+        period.endTime = timeKey(order.createdAt);
+        period.orders += 1;
+        if (order.status === 'paid')
+            period.paidOrders += 1;
+        if (order.status === 'pending')
+            period.pendingOrders += 1;
+        if (order.status === 'cancelled')
+            period.cancelledOrders += 1;
+        const orderRevenue = order.status === 'paid' ? toNumber(order.total) : 0;
+        const orderCost = order.status === 'paid' ? estimateOrderCost(order) : 0;
+        if (order.eventDate) {
+            const periodEvent = period._eventMap.get(order.eventDate.id) ?? {
+                eventDateId: order.eventDate.id,
+                title: order.eventDate.title,
+                startAt: order.eventDate.startAt.toISOString(),
+                endAt: order.eventDate.endAt?.toISOString() ?? null,
+                orders: 0,
+                paidOrders: 0,
+                revenue: 0,
+            };
+            periodEvent.orders += 1;
+            periodEvent.paidOrders += order.status === 'paid' ? 1 : 0;
+            periodEvent.revenue += orderRevenue;
+            period._eventMap.set(order.eventDate.id, periodEvent);
+        }
+        period.revenue += orderRevenue;
+        period.cost += orderCost;
+        period.profit = period.revenue - period.cost;
+        period.averageTicket = period.paidOrders > 0 ? period.revenue / period.paidOrders : 0;
+        const paymentMethod = order.paymentMethod ?? 'unknown';
+        const payment = period._paymentMap.get(paymentMethod) ?? {
+            paymentMethod,
+            label: paymentLabel(paymentMethod),
+            orders: 0,
+            revenue: 0,
+        };
+        payment.orders += order.status === 'paid' ? 1 : 0;
+        payment.revenue += orderRevenue;
+        period._paymentMap.set(paymentMethod, payment);
+        for (const item of order.items) {
+            const quantity = order.status === 'paid' ? toNumber(item.quantity) : 0;
+            const revenue = order.status === 'paid' ? toNumber(item.totalPrice) : 0;
+            period.itemsSold += quantity;
+            const product = period._productMap.get(item.productId) ?? {
+                productId: item.productId,
+                name: item.product.name,
+                quantity: 0,
+                revenue: 0,
+            };
+            product.quantity += quantity;
+            product.revenue += revenue;
+            period._productMap.set(item.productId, product);
+        }
+    }
+    return periods.map((period) => {
+        const paymentMethods = [...period._paymentMap.values()]
+            .filter((item) => item.orders > 0 || item.revenue > 0)
+            .sort((a, b) => b.revenue - a.revenue)
+            .map(normalizeMoneyObject);
+        const topProducts = [...period._productMap.values()]
+            .filter((item) => item.quantity > 0 || item.revenue > 0)
+            .sort((a, b) => b.revenue - a.revenue)
+            .slice(0, 10)
+            .map(normalizeMoneyObject);
+        const periodStart = new Date(period.startAt);
+        const periodEnd = new Date(period.endAt);
+        for (const event of events) {
+            if (!rangesOverlap(periodStart, periodEnd, event.startAt, eventEndForPeriod(event)))
+                continue;
+            if (period._eventMap.has(event.id))
+                continue;
+            period._eventMap.set(event.id, {
+                eventDateId: event.id,
+                title: event.title,
+                startAt: event.startAt.toISOString(),
+                endAt: event.endAt?.toISOString() ?? null,
+                orders: 0,
+                paidOrders: 0,
+                revenue: 0,
+            });
+        }
+        const periodEvents = [...period._eventMap.values()]
+            .sort((a, b) => b.revenue - a.revenue || b.paidOrders - a.paidOrders || new Date(a.startAt).getTime() - new Date(b.startAt).getTime())
+            .map(normalizeMoneyObject);
+        const primaryEvent = periodEvents[0] ?? null;
+        const { _paymentMap, _productMap, _eventMap, ...publicPeriod } = period;
+        return normalizeMoneyObject({
+            ...publicPeriod,
+            eventDateId: primaryEvent?.eventDateId ?? null,
+            eventTitle: primaryEvent?.title ?? null,
+            eventStartAt: primaryEvent?.startAt ?? null,
+            eventEndAt: primaryEvent?.endAt ?? null,
+            events: periodEvents,
+            paymentMethods,
+            topProducts,
+            itemsSold: round(publicPeriod.itemsSold, 2),
+        });
+    });
+}
 function buildWhere(companyId, filters) {
-    const createdAt = parseDateFilter(filters.fromDate, filters.toDate);
+    const createdAt = parseDateFilter(filters.fromDate, filters.toDate, filters.fromTime, filters.toTime);
     const where = {
         companyId,
         ...(createdAt ? { createdAt } : {}),
@@ -416,6 +642,39 @@ function buildWhere(companyId, filters) {
     }
     return where;
 }
+function buildPeriodEventWhere(companyId, filters) {
+    const { start, end } = parseDateRange(filters.fromDate, filters.toDate, filters.fromTime, filters.toTime);
+    const where = { companyId };
+    const andFilters = [];
+    if (filters.eventDateId && filters.eventDateId !== 'all')
+        where.id = filters.eventDateId;
+    if (filters.salesEnvironmentId && filters.salesEnvironmentId !== 'all')
+        where.salesEnvironmentId = filters.salesEnvironmentId;
+    if (start && end) {
+        const openEventStartLimit = new Date(start.getTime() - SIX_HOURS_MS);
+        andFilters.push({
+            OR: [
+                { AND: [{ startAt: { lte: end } }, { endAt: { gte: start } }] },
+                { AND: [{ startAt: { gte: openEventStartLimit } }, { startAt: { lte: end } }, { endAt: null }] },
+            ],
+        });
+    }
+    else if (start) {
+        const openEventStartLimit = new Date(start.getTime() - SIX_HOURS_MS);
+        andFilters.push({
+            OR: [
+                { endAt: { gte: start } },
+                { AND: [{ startAt: { gte: openEventStartLimit } }, { endAt: null }] },
+            ],
+        });
+    }
+    else if (end) {
+        andFilters.push({ startAt: { lte: end } });
+    }
+    if (andFilters.length > 0)
+        where.AND = andFilters;
+    return where;
+}
 async function getReportFilters(companyId) {
     const [events, environments, categories, products, customers, internalCustomers] = await Promise.all([
         prisma_1.prisma.eventDate.findMany({
@@ -461,7 +720,7 @@ async function getReportFilters(companyId) {
 }
 async function getReportsDashboard(companyId, filters) {
     const where = buildWhere(companyId, filters);
-    const orders = await prisma_1.prisma.order.findMany({
+    const fetchedOrders = await prisma_1.prisma.order.findMany({
         where,
         orderBy: { createdAt: 'desc' },
         include: {
@@ -524,6 +783,14 @@ async function getReportsDashboard(companyId, filters) {
             },
         },
     });
+    // Safety net: all report calculations below use the Brazilian date/time window,
+    // even if the database/server timezone behaves differently in production.
+    const orders = fetchedOrders.filter((order) => orderIsInsideBrazilianFilter(order, filters));
+    const periodEvents = await prisma_1.prisma.eventDate.findMany({
+        where: buildPeriodEventWhere(companyId, filters),
+        orderBy: { startAt: 'asc' },
+        select: { id: true, title: true, startAt: true, endAt: true },
+    });
     const paidOrders = orders.filter((order) => order.status === 'paid');
     const pendingOrders = orders.filter((order) => order.status === 'pending');
     const cancelledOrders = orders.filter((order) => order.status === 'cancelled');
@@ -584,7 +851,7 @@ async function getReportsDashboard(companyId, filters) {
         const paymentMethod = order.paymentMethod ?? 'unknown';
         const weekStart = weekKey(order.createdAt);
         const dayOfWeek = weekdayLabel(order.createdAt);
-        const monthPeriod = monthPeriodLabel(new Date(order.createdAt).getDate());
+        const monthPeriod = monthPeriodLabel(Number(getBrazilDateTimeParts(order.createdAt).day));
         addMetricRow(bestHourByDayMap, `${createdDate}:${createdHour}`, { date: createdDate, hour: createdHour, orders: 0, paidOrders: 0, revenue: 0, cost: 0, profit: 0, averageTicket: 0 }, orderRevenue, orderCost, order.status);
         addMetricRow(bestDayByWeekMap, `${weekStart}:${createdDate}`, { weekStart, date: createdDate, weekday: dayOfWeek, orders: 0, paidOrders: 0, revenue: 0, cost: 0, profit: 0, averageTicket: 0 }, orderRevenue, orderCost, order.status);
         addMetricRow(weekdayMap, dayOfWeek, { weekday: dayOfWeek, orders: 0, paidOrders: 0, revenue: 0, cost: 0, profit: 0, averageTicket: 0 }, orderRevenue, orderCost, order.status);
@@ -824,8 +1091,13 @@ async function getReportsDashboard(companyId, filters) {
         }
         return next;
     }
+    const periods = buildReportPeriods(orders, periodEvents, normalizeMoneyObject);
     return {
-        filters,
+        filters: {
+            ...filters,
+            fromTime: normalizeTimeInput(filters.fromTime, '00:00'),
+            toTime: normalizeTimeInput(filters.toTime, '23:59'),
+        },
         summary: {
             totalOrders: orders.length,
             paidOrders: paidOrders.length,
@@ -860,6 +1132,7 @@ async function getReportsDashboard(companyId, filters) {
             monthPeriodPerformance: monthPeriodPerformance.map(normalizeMoneyObject),
             weekdayPerformance: weekdayPerformance.map(normalizeMoneyObject),
             ticketByEvent: ticketByEvent.map(normalizeMoneyObject),
+            periods,
         },
         charts: {
             salesByDay: [...salesByDay.values()].sort((a, b) => a.date.localeCompare(b.date)).map(normalizeMoneyObject),
@@ -879,6 +1152,7 @@ async function getReportsDashboard(companyId, filters) {
             monthPeriodPerformance: monthPeriodPerformance.map(normalizeMoneyObject),
             weekdayPerformance: weekdayPerformance.map(normalizeMoneyObject),
             customers: topCustomers.map(normalizeMoneyObject),
+            periods,
         },
         tables: {
             products: [...productRows].sort((a, b) => b.revenue - a.revenue).map(normalizeMoneyObject),
@@ -892,6 +1166,7 @@ async function getReportsDashboard(companyId, filters) {
             weekdayPerformance: weekdayPerformance.map(normalizeMoneyObject),
             environments: salesEnvironmentPerformance.map(normalizeMoneyObject),
             customers: topCustomers.map(normalizeMoneyObject),
+            periods,
             recentOrders: orders.slice(0, 50).map((order) => ({
                 id: order.id,
                 comanda: order.comanda,

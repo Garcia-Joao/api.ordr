@@ -6,6 +6,8 @@ exports.createBuyRequestShoppingListPrintJobs = createBuyRequestShoppingListPrin
 exports.createOrderReceiptPrintJob = createOrderReceiptPrintJob;
 exports.reprintOrderTickets = reprintOrderTickets;
 exports.listTerminalPendingJobs = listTerminalPendingJobs;
+exports.claimTerminalPrintPackage = claimTerminalPrintPackage;
+exports.updateTerminalPrintPackageStatus = updateTerminalPrintPackageStatus;
 exports.claimPrintJob = claimPrintJob;
 exports.updatePrintJobStatus = updatePrintJobStatus;
 exports.deletePrintJob = deletePrintJob;
@@ -471,7 +473,14 @@ async function reprintOrderTickets(companyId, orderId) {
     // print ports and the saved print template.
     return createOrderPrintJobs(companyId, orderId);
 }
-async function listTerminalPendingJobs(companyId, terminalDeviceId) {
+function normalizePrintPackage(packageId, jobs) {
+    return {
+        packageId,
+        jobs: jobs.map(normalizeJob),
+        count: jobs.length,
+    };
+}
+async function ensurePrintTerminal(companyId, terminalDeviceId) {
     const terminal = await prisma_1.prisma.device.findFirst({
         where: {
             id: terminalDeviceId,
@@ -484,6 +493,10 @@ async function listTerminalPendingJobs(companyId, terminalDeviceId) {
     });
     if (!terminal)
         throw new Error('PRINT_TERMINAL_NOT_FOUND');
+    return terminal;
+}
+async function listTerminalPendingJobs(companyId, terminalDeviceId) {
+    await ensurePrintTerminal(companyId, terminalDeviceId);
     const jobs = await prisma_1.prisma.printJob.findMany({
         where: {
             companyId,
@@ -495,6 +508,66 @@ async function listTerminalPendingJobs(companyId, terminalDeviceId) {
         take: 20,
     });
     return jobs.map(normalizeJob);
+}
+async function claimTerminalPrintPackage(companyId, terminalDeviceId, limit = 50) {
+    await ensurePrintTerminal(companyId, terminalDeviceId);
+    const jobs = await prisma_1.prisma.$transaction(async (tx) => {
+        const pending = await tx.printJob.findMany({
+            where: {
+                companyId,
+                terminalDeviceId,
+                status: { in: ['PENDING', 'CLAIMED'] },
+            },
+            select: { id: true },
+            orderBy: { createdAt: 'asc' },
+            take: Math.min(Math.max(limit, 1), 100),
+        });
+        const ids = pending.map((job) => job.id);
+        if (ids.length === 0)
+            return [];
+        await tx.printJob.updateMany({
+            where: { id: { in: ids }, companyId, terminalDeviceId, status: 'PENDING' },
+            data: { status: 'CLAIMED', claimedAt: new Date(), attempts: { increment: 1 } },
+        });
+        return tx.printJob.findMany({
+            where: { id: { in: ids }, companyId, terminalDeviceId, status: 'CLAIMED' },
+            include: { port: { include: { bindings: true } }, order: true },
+            orderBy: { createdAt: 'asc' },
+        });
+    });
+    return normalizePrintPackage(jobs.map((job) => job.id).join(','), jobs);
+}
+async function updateTerminalPrintPackageStatus(companyId, terminalDeviceId, jobIds, status, errorMessage) {
+    await ensurePrintTerminal(companyId, terminalDeviceId);
+    const safeJobIds = Array.from(new Set(jobIds.filter(Boolean)));
+    if (safeJobIds.length === 0)
+        return { ok: true, count: 0 };
+    if (status === 'PRINTED') {
+        const deleted = await prisma_1.prisma.printJob.deleteMany({
+            where: {
+                id: { in: safeJobIds },
+                companyId,
+                terminalDeviceId,
+                status: { in: ['CLAIMED', 'PRINTING', 'PENDING'] },
+            },
+        });
+        return { ok: true, count: deleted.count };
+    }
+    const now = new Date();
+    const updated = await prisma_1.prisma.printJob.updateMany({
+        where: {
+            id: { in: safeJobIds },
+            companyId,
+            terminalDeviceId,
+        },
+        data: {
+            status,
+            errorMessage: errorMessage ?? null,
+            ...(status === 'PRINTING' ? { startedAt: now } : {}),
+            ...(status === 'FAILED' ? { failedAt: now } : {}),
+        },
+    });
+    return { ok: true, count: updated.count };
 }
 async function claimPrintJob(companyId, terminalDeviceId, jobId) {
     const job = await prisma_1.prisma.printJob.findFirst({

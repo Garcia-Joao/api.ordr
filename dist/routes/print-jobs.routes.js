@@ -7,6 +7,8 @@ const router = (0, express_1.Router)();
 router.post('/', auth_middleware_1.requireAuth, print_jobs_controller_1.createPrintJob);
 router.post('/orders/:orderId', auth_middleware_1.requireAuth, print_jobs_controller_1.createOrderPrintJobs);
 router.get('/terminal/pending', auth_middleware_1.requireAuth, print_jobs_controller_1.listTerminalPendingJobs);
+router.post('/terminal/package/claim', auth_middleware_1.requireAuth, print_jobs_controller_1.claimTerminalPrintPackage);
+router.patch('/terminal/package/status', auth_middleware_1.requireAuth, print_jobs_controller_1.updateTerminalPrintPackageStatus);
 router.post('/:id/claim', auth_middleware_1.requireAuth, print_jobs_controller_1.claimPrintJob);
 router.patch('/:id/status', auth_middleware_1.requireAuth, print_jobs_controller_1.updatePrintJobStatus);
 router.delete('/:id', auth_middleware_1.requireAuth, print_jobs_controller_1.deletePrintJob);

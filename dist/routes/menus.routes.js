@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const auth_middleware_1 = require("../middleware/auth.middleware");
+const require_permission_middleware_1 = require("../middleware/require-permission.middleware");
+const menus_controller_1 = require("../controllers/menus.controller");
+const router = (0, express_1.Router)();
+router.get('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.view', 'pdv.view', 'interno.view', 'orders.create'), menus_controller_1.listMenus);
+router.get('/active', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.view', 'pdv.view', 'interno.view', 'orders.create'), menus_controller_1.getActiveMenu);
+router.get('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.view', 'pdv.view', 'interno.view', 'orders.create'), menus_controller_1.getMenu);
+router.post('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.create'), menus_controller_1.createMenu);
+router.patch('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.update'), menus_controller_1.updateMenu);
+router.post('/:id/activate', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.update'), menus_controller_1.activateMenu);
+router.delete('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.delete'), menus_controller_1.deleteMenu);
+exports.default = router;
