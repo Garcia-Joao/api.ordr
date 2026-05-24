@@ -60,6 +60,46 @@ export async function listTerminalPendingJobs(req: AuthRequest, res: Response) {
   }
 }
 
+
+export async function claimTerminalPrintPackage(req: AuthRequest, res: Response) {
+  try {
+    const companyId = req.user?.companyId
+    const terminalDeviceId = String(req.query.terminalDeviceId ?? req.body?.terminalDeviceId ?? '')
+    const limit = Number(req.query.limit ?? req.body?.limit ?? 50)
+    if (!companyId) return res.status(401).json({ error: 'Unauthorized' })
+    if (!terminalDeviceId) return res.status(400).json({ error: 'terminalDeviceId é obrigatório.' })
+
+    const printPackage = await service.claimTerminalPrintPackage(companyId, terminalDeviceId, limit)
+    return res.json({ package: printPackage })
+  } catch (error: any) {
+    console.error('claim terminal print package error:', error)
+    return handleError(res, error)
+  }
+}
+
+export async function updateTerminalPrintPackageStatus(req: AuthRequest, res: Response) {
+  try {
+    const companyId = req.user?.companyId
+    const terminalDeviceId = String(req.body?.terminalDeviceId ?? '')
+    const jobIds = Array.isArray(req.body?.jobIds) ? req.body.jobIds.map(String) : []
+    const status = String(req.body?.status ?? '') as any
+    if (!companyId) return res.status(401).json({ error: 'Unauthorized' })
+    if (!terminalDeviceId || !status) return res.status(400).json({ error: 'terminalDeviceId e status são obrigatórios.' })
+
+    const result = await service.updateTerminalPrintPackageStatus(
+      companyId,
+      terminalDeviceId,
+      jobIds,
+      status,
+      req.body?.errorMessage ?? null
+    )
+    return res.json(result)
+  } catch (error: any) {
+    console.error('update terminal print package status error:', error)
+    return handleError(res, error)
+  }
+}
+
 export async function claimPrintJob(req: AuthRequest, res: Response) {
   try {
     const companyId = req.user?.companyId

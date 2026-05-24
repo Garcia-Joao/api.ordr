@@ -86,6 +86,7 @@ model Company {
   categories              Category[]
   orders                  Order[]
   products                Product[]
+  menus                   Menu[]
   memberships             UserCompany[]
   accessRoles             Role[]
   internalCustomers       InternalCustomer[]
@@ -293,6 +294,7 @@ model Product {
   buyRequestItems             BuyRequestItem[]
   costHistory                 ProductCostHistory[]
   supplierPriceItems          SupplierPriceTableItem[]
+  menuItems                  MenuItem[]
 
   @@index([companyId])
   @@index([categoryId])
@@ -303,6 +305,42 @@ model Product {
   @@index([deletedByUserId])
   @@index([deletedAt])
   @@index([printPortId])
+}
+
+
+model Menu {
+  id          String   @id @default(cuid())
+  companyId   String
+  name        String
+  description String?
+  active      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  items   MenuItem[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
+  @@index([companyId, active])
+}
+
+model MenuItem {
+  id        String   @id @default(cuid())
+  menuId    String
+  productId String
+  price     Decimal  @db.Decimal(10, 2)
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  menu    Menu    @relation(fields: [menuId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([menuId, productId])
+  @@index([menuId])
+  @@index([productId])
 }
 
 model ProductRecipeItem {

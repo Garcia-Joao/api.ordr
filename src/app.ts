@@ -4,6 +4,7 @@ import cookieParser from 'cookie-parser'
 
 import authRouter from './routes/auth.routes'
 import productsRouter from './routes/products.routes'
+import menusRouter from './routes/menus.routes'
 import categoriesRouter from './routes/categories.routes'
 import ordersRouter from './routes/orders.routes'
 import companiesRouter from './routes/companies.routes'
@@ -117,6 +118,7 @@ app.use('/admin', adminRouter)
 app.use('/auth', authRouter)
 
 app.use('/products', productsRouter)
+app.use('/menus', menusRouter)
 app.use('/categories', categoriesRouter)
 app.use('/orders', ordersRouter)
 app.use('/companies', companiesRouter)

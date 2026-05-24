@@ -624,6 +624,11 @@ async function validateRecipeCycle(
 const productInclude = {
   category: true,
   printPort: true,
+  menuItems: {
+    include: {
+      menu: true,
+    },
+  },
   environmentPrices: {
     include: {
       salesEnvironment: true,
@@ -717,10 +722,45 @@ async function ensureVariationOptionIngredientsBelongToCompany(
   }
 }
 
+
+function applyActiveMenuToProducts(products: any[], activeMenu: any | null) {
+  if (!activeMenu) return products
+
+  const menuItemsByProductId = new Map(
+    (activeMenu.items ?? [])
+      .filter((item: any) => item.active)
+      .map((item: any) => [item.productId, item])
+  )
+
+  return products
+    .map((product: any) => {
+      const menuItem = menuItemsByProductId.get(product.id) as any
+      if (!menuItem) return null
+
+      return {
+        ...product,
+        price: Number(menuItem.price),
+        menuPrice: Number(menuItem.price),
+        activeMenuId: activeMenu.id,
+        activeMenuName: activeMenu.name,
+        menuItemId: menuItem.id,
+      }
+    })
+    .filter(Boolean)
+}
+
 export async function getProductsByCompany(
   companyId: string,
   includeInactive = false,
+  options: { menu?: 'active' | 'all' } = {},
 ) {
+  const activeMenu = options.menu === 'active'
+    ? await prisma.menu.findFirst({
+        where: { companyId, active: true },
+        include: { items: true },
+      })
+    : null;
+
   const products = await prisma.product.findMany({
     where: {
       companyId,
@@ -733,7 +773,10 @@ export async function getProductsByCompany(
     },
   });
 
-  return products.map(normalizeProduct);
+  const normalizedProducts = products.map(normalizeProduct);
+  return options.menu === 'active'
+    ? applyActiveMenuToProducts(normalizedProducts, activeMenu)
+    : normalizedProducts;
 }
 
 export async function getProductById(productId: string, companyId: string) {

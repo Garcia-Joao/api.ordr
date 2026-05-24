@@ -19,10 +19,12 @@ export async function getProducts(req: AuthRequest, res: Response) {
     }
 
     const includeInactive = req.query.includeInactive === 'true'
+    const menu = req.query.menu === 'active' ? 'active' : 'all'
 
     const products = await productsService.getProductsByCompany(
       companyId,
-      includeInactive
+      includeInactive,
+      { menu }
     )
     return res.json(products)
   } catch (error: any) {
