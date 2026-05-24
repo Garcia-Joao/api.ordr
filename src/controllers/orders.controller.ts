@@ -113,7 +113,11 @@ export async function reprintOrderTickets(req: AuthRequest, res: Response) {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 
-    const jobs = await orderService.reprintOrderTickets(companyId, orderId)
+    const jobs = await orderService.reprintOrderTickets(
+      companyId,
+      orderId,
+      getHeaderString(req.body?.preferredTerminalDeviceId) ?? null
+    )
     return res.status(201).json({ jobs })
   } catch (error: any) {
     console.error('reprintOrderTickets error:', error)
@@ -142,7 +146,11 @@ export async function reprintOrderReceipt(req: AuthRequest, res: Response) {
       return res.status(401).json({ error: 'Unauthorized' })
     }
 
-    const jobs = await orderService.reprintOrderReceipt(companyId, orderId)
+    const jobs = await orderService.reprintOrderReceipt(
+      companyId,
+      orderId,
+      getHeaderString(req.body?.preferredTerminalDeviceId) ?? null
+    )
     return res.status(201).json({ jobs })
   } catch (error: any) {
     console.error('reprintOrderReceipt error:', error)

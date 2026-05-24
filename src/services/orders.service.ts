@@ -42,6 +42,7 @@ type CreateOrderInput = {
   paymentMethod?: PaymentMethod | null
   taxApplied: boolean
   deviceId?: string | null
+  preferredTerminalDeviceId?: string | null
   orderItems: CreateOrderItemInput[]
 }
 
@@ -952,6 +953,7 @@ const order = await prisma.$transaction(async (tx: any) => {
   try {
     printJobs = await createOrderPrintJobs(order.companyId, order.id, {
       itemPrintModes: buildInputItemPrintModes(data.orderItems),
+      preferredTerminalDeviceId: data.preferredTerminalDeviceId ?? null,
     })
 
     console.log('[ORDER PRINT JOBS] Created successfully', {
@@ -980,12 +982,12 @@ const order = await prisma.$transaction(async (tx: any) => {
   }
 }
 
-export async function reprintOrderTickets(companyId: string, orderId: string) {
-  return createOrderPrintJobs(companyId, orderId)
+export async function reprintOrderTickets(companyId: string, orderId: string, preferredTerminalDeviceId?: string | null) {
+  return createOrderPrintJobs(companyId, orderId, { preferredTerminalDeviceId })
 }
 
-export async function reprintOrderReceipt(companyId: string, orderId: string) {
-  const job = await createOrderReceiptPrintJob(companyId, orderId)
+export async function reprintOrderReceipt(companyId: string, orderId: string, preferredTerminalDeviceId?: string | null) {
+  const job = await createOrderReceiptPrintJob(companyId, orderId, preferredTerminalDeviceId)
   return [job]
 }
 

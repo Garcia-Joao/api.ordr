@@ -739,8 +739,10 @@ function applyActiveMenuToProducts(products: any[], activeMenu: any | null) {
 
       return {
         ...product,
-        price: Number(menuItem.price),
+        price: Number(product.price ?? 0),
+        defaultPrice: Number(product.price ?? 0),
         menuPrice: Number(menuItem.price),
+        effectiveDefaultPrice: Number(menuItem.price),
         activeMenuId: activeMenu.id,
         activeMenuName: activeMenu.name,
         menuItemId: menuItem.id,

@@ -100,6 +100,7 @@ type PrintItemMode = 'SEPARATE' | 'GROUPED'
 
 type CreateOrderPrintJobsOptions = {
   itemPrintModes?: Map<string, PrintItemMode>
+  preferredTerminalDeviceId?: string | null
 }
 
 function getOrderItemPrintKey(item: any) {
@@ -162,6 +163,23 @@ function buildTicketsForPortItems(itemsWithModes: Array<{ item: any; mode: Print
   }
 
   return tickets
+}
+
+
+function getEnabledTerminalBindings(port: any) {
+  return (port?.bindings ?? []).filter((binding: any) =>
+    binding.terminalDevice?.printTerminalEnabled &&
+    binding.terminalDevice?.clientType === 'ELECTRON'
+  )
+}
+
+function resolveBindingsForComputer(port: any, preferredTerminalDeviceId?: string | null) {
+  const bindings = getEnabledTerminalBindings(port)
+  const preferredId = preferredTerminalDeviceId?.trim()
+
+  if (!preferredId) return bindings
+
+  return bindings.filter((binding: any) => binding.terminalDeviceId === preferredId)
 }
 
 function buildOrderPayload(order: any, port: any, tickets: any[], template?: any) {
@@ -237,10 +255,7 @@ export async function createOrderPrintJobs(
   for (const [portId, itemsWithModes] of itemsByPort.entries()) {
     const port = portsById.get(portId) ?? null
     const tickets = buildTicketsForPortItems(itemsWithModes)
-    const bindings = (port?.bindings ?? []).filter((binding: any) =>
-      binding.terminalDevice?.printTerminalEnabled &&
-      binding.terminalDevice?.clientType === 'ELECTRON'
-    )
+    const bindings = resolveBindingsForComputer(port, options.preferredTerminalDeviceId)
 
     if (!port || bindings.length === 0) {
       jobs.push(await prisma.printJob.create({
@@ -258,7 +273,13 @@ export async function createOrderPrintJobs(
       continue
     }
 
-    const uniqueTerminalIds = Array.from(new Set(bindings.map((binding: any) => binding.terminalDeviceId)))
+    const uniqueTerminalIds: string[] = Array.from(
+      new Set<string>(
+        bindings
+          .map((binding: any) => binding.terminalDeviceId)
+          .filter((terminalDeviceId: unknown): terminalDeviceId is string => typeof terminalDeviceId === 'string' && terminalDeviceId.length > 0)
+      )
+    )
 
     for (const terminalDeviceId of uniqueTerminalIds) {
       jobs.push(await prisma.printJob.create({
@@ -329,6 +350,7 @@ export async function createBuyRequestShoppingListPrintJobs(input: {
   companyId: string
   buyRequestId: string
   portId?: string | null
+  preferredTerminalDeviceId?: string | null
 }) {
   const printTemplates = await getPrintTemplates(input.companyId)
 
@@ -391,10 +413,7 @@ export async function createBuyRequestShoppingListPrintJobs(input: {
     return [normalizeJob(failedJob)]
   }
 
-  const bindings = (port.bindings ?? []).filter((binding: any) =>
-    binding.terminalDevice?.printTerminalEnabled &&
-    binding.terminalDevice?.clientType === 'ELECTRON'
-  )
+  const bindings = resolveBindingsForComputer(port, input.preferredTerminalDeviceId)
 
   if (bindings.length === 0) {
     const failedJob = await prisma.printJob.create({
@@ -414,8 +433,12 @@ export async function createBuyRequestShoppingListPrintJobs(input: {
     return [normalizeJob(failedJob)]
   }
 
-  const uniqueTerminalIds = Array.from(
-    new Set(bindings.map((binding: any) => binding.terminalDeviceId))
+  const uniqueTerminalIds: string[] = Array.from(
+    new Set<string>(
+      bindings
+        .map((binding: any) => binding.terminalDeviceId)
+        .filter((terminalDeviceId: unknown): terminalDeviceId is string => typeof terminalDeviceId === 'string' && terminalDeviceId.length > 0)
+    )
   )
 
   const jobs = []
@@ -490,7 +513,7 @@ function buildReceiptPayload(order: any, port: any) {
   }
 }
 
-export async function createOrderReceiptPrintJob(companyId: string, orderId: string) {
+export async function createOrderReceiptPrintJob(companyId: string, orderId: string, preferredTerminalDeviceId?: string | null) {
   const order = await prisma.order.findFirst({
     where: { id: orderId, companyId },
     include: {
@@ -524,10 +547,7 @@ export async function createOrderReceiptPrintJob(companyId: string, orderId: str
     return normalizeJob(failedJob)
   }
 
-  const bindings = (port.bindings ?? []).filter((binding: any) =>
-    binding.terminalDevice?.printTerminalEnabled &&
-    binding.terminalDevice?.clientType === 'ELECTRON'
-  )
+  const bindings = resolveBindingsForComputer(port, preferredTerminalDeviceId)
 
   if (bindings.length === 0) {
     const failedJob = await prisma.printJob.create({

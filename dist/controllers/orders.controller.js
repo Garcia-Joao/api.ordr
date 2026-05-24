@@ -131,7 +131,7 @@ async function reprintOrderTickets(req, res) {
         if (!companyId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-        const jobs = await orderService.reprintOrderTickets(companyId, orderId);
+        const jobs = await orderService.reprintOrderTickets(companyId, orderId, getHeaderString(req.body?.preferredTerminalDeviceId) ?? null);
         return res.status(201).json({ jobs });
     }
     catch (error) {
@@ -156,7 +156,7 @@ async function reprintOrderReceipt(req, res) {
         if (!companyId) {
             return res.status(401).json({ error: 'Unauthorized' });
         }
-        const jobs = await orderService.reprintOrderReceipt(companyId, orderId);
+        const jobs = await orderService.reprintOrderReceipt(companyId, orderId, getHeaderString(req.body?.preferredTerminalDeviceId) ?? null);
         return res.status(201).json({ jobs });
     }
     catch (error) {

@@ -710,6 +710,7 @@ async function createOrder(data, userId) {
     try {
         printJobs = await (0, print_jobs_service_1.createOrderPrintJobs)(order.companyId, order.id, {
             itemPrintModes: buildInputItemPrintModes(data.orderItems),
+            preferredTerminalDeviceId: data.preferredTerminalDeviceId ?? null,
         });
         console.log('[ORDER PRINT JOBS] Created successfully', {
             orderId: order.id,
@@ -736,11 +737,11 @@ async function createOrder(data, userId) {
         printJobs,
     };
 }
-async function reprintOrderTickets(companyId, orderId) {
-    return (0, print_jobs_service_1.createOrderPrintJobs)(companyId, orderId);
+async function reprintOrderTickets(companyId, orderId, preferredTerminalDeviceId) {
+    return (0, print_jobs_service_1.createOrderPrintJobs)(companyId, orderId, { preferredTerminalDeviceId });
 }
-async function reprintOrderReceipt(companyId, orderId) {
-    const job = await (0, print_jobs_service_1.createOrderReceiptPrintJob)(companyId, orderId);
+async function reprintOrderReceipt(companyId, orderId, preferredTerminalDeviceId) {
+    const job = await (0, print_jobs_service_1.createOrderReceiptPrintJob)(companyId, orderId, preferredTerminalDeviceId);
     return [job];
 }
 async function getOrdersByCompany(companyId, includeCancelled = true) {

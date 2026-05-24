@@ -136,6 +136,17 @@ function buildTicketsForPortItems(itemsWithModes) {
     }
     return tickets;
 }
+function getEnabledTerminalBindings(port) {
+    return (port?.bindings ?? []).filter((binding) => binding.terminalDevice?.printTerminalEnabled &&
+        binding.terminalDevice?.clientType === 'ELECTRON');
+}
+function resolveBindingsForComputer(port, preferredTerminalDeviceId) {
+    const bindings = getEnabledTerminalBindings(port);
+    const preferredId = preferredTerminalDeviceId?.trim();
+    if (!preferredId)
+        return bindings;
+    return bindings.filter((binding) => binding.terminalDeviceId === preferredId);
+}
 function buildOrderPayload(order, port, tickets, template) {
     const flattenedItems = tickets.flatMap((ticket) => ticket.items ?? []);
     return {
@@ -195,8 +206,7 @@ async function createOrderPrintJobs(companyId, orderId, options = {}) {
     for (const [portId, itemsWithModes] of itemsByPort.entries()) {
         const port = portsById.get(portId) ?? null;
         const tickets = buildTicketsForPortItems(itemsWithModes);
-        const bindings = (port?.bindings ?? []).filter((binding) => binding.terminalDevice?.printTerminalEnabled &&
-            binding.terminalDevice?.clientType === 'ELECTRON');
+        const bindings = resolveBindingsForComputer(port, options.preferredTerminalDeviceId);
         if (!port || bindings.length === 0) {
             jobs.push(await prisma_1.prisma.printJob.create({
                 data: {
@@ -212,7 +222,9 @@ async function createOrderPrintJobs(companyId, orderId, options = {}) {
             }));
             continue;
         }
-        const uniqueTerminalIds = Array.from(new Set(bindings.map((binding) => binding.terminalDeviceId)));
+        const uniqueTerminalIds = Array.from(new Set(bindings
+            .map((binding) => binding.terminalDeviceId)
+            .filter((terminalDeviceId) => typeof terminalDeviceId === 'string' && terminalDeviceId.length > 0)));
         for (const terminalDeviceId of uniqueTerminalIds) {
             jobs.push(await prisma_1.prisma.printJob.create({
                 data: {
@@ -327,8 +339,7 @@ async function createBuyRequestShoppingListPrintJobs(input) {
         });
         return [normalizeJob(failedJob)];
     }
-    const bindings = (port.bindings ?? []).filter((binding) => binding.terminalDevice?.printTerminalEnabled &&
-        binding.terminalDevice?.clientType === 'ELECTRON');
+    const bindings = resolveBindingsForComputer(port, input.preferredTerminalDeviceId);
     if (bindings.length === 0) {
         const failedJob = await prisma_1.prisma.printJob.create({
             data: {
@@ -345,7 +356,9 @@ async function createBuyRequestShoppingListPrintJobs(input) {
         });
         return [normalizeJob(failedJob)];
     }
-    const uniqueTerminalIds = Array.from(new Set(bindings.map((binding) => binding.terminalDeviceId)));
+    const uniqueTerminalIds = Array.from(new Set(bindings
+        .map((binding) => binding.terminalDeviceId)
+        .filter((terminalDeviceId) => typeof terminalDeviceId === 'string' && terminalDeviceId.length > 0)));
     const jobs = [];
     for (const terminalDeviceId of uniqueTerminalIds) {
         jobs.push(await prisma_1.prisma.printJob.create({
@@ -404,7 +417,7 @@ function buildReceiptPayload(order, port) {
         })),
     };
 }
-async function createOrderReceiptPrintJob(companyId, orderId) {
+async function createOrderReceiptPrintJob(companyId, orderId, preferredTerminalDeviceId) {
     const order = await prisma_1.prisma.order.findFirst({
         where: { id: orderId, companyId },
         include: {
@@ -434,8 +447,7 @@ async function createOrderReceiptPrintJob(companyId, orderId) {
         });
         return normalizeJob(failedJob);
     }
-    const bindings = (port.bindings ?? []).filter((binding) => binding.terminalDevice?.printTerminalEnabled &&
-        binding.terminalDevice?.clientType === 'ELECTRON');
+    const bindings = resolveBindingsForComputer(port, preferredTerminalDeviceId);
     if (bindings.length === 0) {
         const failedJob = await prisma_1.prisma.printJob.create({
             data: {
