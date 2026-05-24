@@ -59,6 +59,26 @@ export async function createMenu(req: AuthRequest, res: Response) {
   }
 }
 
+export async function duplicateMenu(req: AuthRequest, res: Response) {
+  try {
+    const companyId = req.user?.companyId
+    if (!companyId) return res.status(401).json({ error: 'Unauthorized' })
+    return res.status(201).json({ menu: await menusService.duplicateMenu(companyId, param(req.params.id), req.body ?? {}) })
+  } catch (error: any) {
+    return handleError(res, error)
+  }
+}
+
+export async function deactivateMenu(req: AuthRequest, res: Response) {
+  try {
+    const companyId = req.user?.companyId
+    if (!companyId) return res.status(401).json({ error: 'Unauthorized' })
+    return res.json({ menu: await menusService.deactivateMenu(companyId, param(req.params.id)) })
+  } catch (error: any) {
+    return handleError(res, error)
+  }
+}
+
 export async function updateMenu(req: AuthRequest, res: Response) {
   try {
     const companyId = req.user?.companyId

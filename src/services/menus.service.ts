@@ -120,6 +120,57 @@ export async function createMenu(companyId: string, input: MenuInput) {
   return normalizeMenu(menu)
 }
 
+
+export async function duplicateMenu(companyId: string, menuId: string, input: { name?: string; active?: boolean } = {}) {
+  const existing = await prisma.menu.findFirst({
+    where: { id: menuId, companyId },
+    include: menuInclude,
+  })
+  if (!existing) throw new Error('MENU_NOT_FOUND')
+
+  const baseName = input.name?.trim() || `${existing.name} (cópia)`
+  await ensureProductsBelongToCompany(companyId, existing.items as any)
+
+  const menu = await prisma.$transaction(async (tx) => {
+    if (input.active) {
+      await tx.menu.updateMany({ where: { companyId, active: true }, data: { active: false } })
+    }
+
+    return tx.menu.create({
+      data: {
+        companyId,
+        name: baseName,
+        description: existing.description,
+        active: Boolean(input.active),
+        items: {
+          create: (existing.items ?? []).map((item: any, index: number) => ({
+            productId: item.productId,
+            price: new Prisma.Decimal(item.price ?? 0),
+            active: item.active ?? true,
+            sortOrder: item.sortOrder ?? index,
+          })),
+        },
+      },
+      include: menuInclude,
+    })
+  })
+
+  return normalizeMenu(menu)
+}
+
+export async function deactivateMenu(companyId: string, menuId: string) {
+  const existing = await prisma.menu.findFirst({ where: { id: menuId, companyId } })
+  if (!existing) throw new Error('MENU_NOT_FOUND')
+
+  const menu = await prisma.menu.update({
+    where: { id: menuId },
+    data: { active: false },
+    include: menuInclude,
+  })
+
+  return normalizeMenu(menu)
+}
+
 export async function updateMenu(companyId: string, menuId: string, input: Partial<MenuInput>) {
   const existing = await prisma.menu.findFirst({ where: { id: menuId, companyId } })
   if (!existing) throw new Error('MENU_NOT_FOUND')

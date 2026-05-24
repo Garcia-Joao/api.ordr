@@ -4,7 +4,9 @@ import { requirePermission } from '../middleware/require-permission.middleware'
 import {
   activateMenu,
   createMenu,
+  deactivateMenu,
   deleteMenu,
+  duplicateMenu,
   getActiveMenu,
   getMenu,
   listMenus,
@@ -19,6 +21,8 @@ router.get('/:id', requireAuth, requirePermission('products.view', 'pdv.view', '
 router.post('/', requireAuth, requirePermission('products.create'), createMenu)
 router.patch('/:id', requireAuth, requirePermission('products.update'), updateMenu)
 router.post('/:id/activate', requireAuth, requirePermission('products.update'), activateMenu)
+router.post('/:id/deactivate', requireAuth, requirePermission('products.update'), deactivateMenu)
+router.post('/:id/duplicate', requireAuth, requirePermission('products.create'), duplicateMenu)
 router.delete('/:id', requireAuth, requirePermission('products.delete'), deleteMenu)
 
 export default router

@@ -37,6 +37,8 @@ exports.listMenus = listMenus;
 exports.getActiveMenu = getActiveMenu;
 exports.getMenu = getMenu;
 exports.createMenu = createMenu;
+exports.duplicateMenu = duplicateMenu;
+exports.deactivateMenu = deactivateMenu;
 exports.updateMenu = updateMenu;
 exports.activateMenu = activateMenu;
 exports.deleteMenu = deleteMenu;
@@ -97,6 +99,28 @@ async function createMenu(req, res) {
         if (!companyId)
             return res.status(401).json({ error: 'Unauthorized' });
         return res.status(201).json({ menu: await menusService.createMenu(companyId, req.body) });
+    }
+    catch (error) {
+        return handleError(res, error);
+    }
+}
+async function duplicateMenu(req, res) {
+    try {
+        const companyId = req.user?.companyId;
+        if (!companyId)
+            return res.status(401).json({ error: 'Unauthorized' });
+        return res.status(201).json({ menu: await menusService.duplicateMenu(companyId, param(req.params.id), req.body ?? {}) });
+    }
+    catch (error) {
+        return handleError(res, error);
+    }
+}
+async function deactivateMenu(req, res) {
+    try {
+        const companyId = req.user?.companyId;
+        if (!companyId)
+            return res.status(401).json({ error: 'Unauthorized' });
+        return res.json({ menu: await menusService.deactivateMenu(companyId, param(req.params.id)) });
     }
     catch (error) {
         return handleError(res, error);

@@ -11,5 +11,7 @@ router.get('/:id', auth_middleware_1.requireAuth, (0, require_permission_middlew
 router.post('/', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.create'), menus_controller_1.createMenu);
 router.patch('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.update'), menus_controller_1.updateMenu);
 router.post('/:id/activate', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.update'), menus_controller_1.activateMenu);
+router.post('/:id/deactivate', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.update'), menus_controller_1.deactivateMenu);
+router.post('/:id/duplicate', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.create'), menus_controller_1.duplicateMenu);
 router.delete('/:id', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('products.delete'), menus_controller_1.deleteMenu);
 exports.default = router;

@@ -4,6 +4,8 @@ exports.listMenus = listMenus;
 exports.getActiveMenu = getActiveMenu;
 exports.getMenu = getMenu;
 exports.createMenu = createMenu;
+exports.duplicateMenu = duplicateMenu;
+exports.deactivateMenu = deactivateMenu;
 exports.updateMenu = updateMenu;
 exports.activateMenu = activateMenu;
 exports.deleteMenu = deleteMenu;
@@ -99,6 +101,50 @@ async function createMenu(companyId, input) {
             },
             include: menuInclude,
         });
+    });
+    return normalizeMenu(menu);
+}
+async function duplicateMenu(companyId, menuId, input = {}) {
+    const existing = await prisma_1.prisma.menu.findFirst({
+        where: { id: menuId, companyId },
+        include: menuInclude,
+    });
+    if (!existing)
+        throw new Error('MENU_NOT_FOUND');
+    const baseName = input.name?.trim() || `${existing.name} (cópia)`;
+    await ensureProductsBelongToCompany(companyId, existing.items);
+    const menu = await prisma_1.prisma.$transaction(async (tx) => {
+        if (input.active) {
+            await tx.menu.updateMany({ where: { companyId, active: true }, data: { active: false } });
+        }
+        return tx.menu.create({
+            data: {
+                companyId,
+                name: baseName,
+                description: existing.description,
+                active: Boolean(input.active),
+                items: {
+                    create: (existing.items ?? []).map((item, index) => ({
+                        productId: item.productId,
+                        price: new client_1.Prisma.Decimal(item.price ?? 0),
+                        active: item.active ?? true,
+                        sortOrder: item.sortOrder ?? index,
+                    })),
+                },
+            },
+            include: menuInclude,
+        });
+    });
+    return normalizeMenu(menu);
+}
+async function deactivateMenu(companyId, menuId) {
+    const existing = await prisma_1.prisma.menu.findFirst({ where: { id: menuId, companyId } });
+    if (!existing)
+        throw new Error('MENU_NOT_FOUND');
+    const menu = await prisma_1.prisma.menu.update({
+        where: { id: menuId },
+        data: { active: false },
+        include: menuInclude,
     });
     return normalizeMenu(menu);
 }
