@@ -79,6 +79,10 @@ model Company {
   companyType CompanyType @default(BUSINESS)
   createdAt   DateTime    @default(now())
 
+  pdvRequireComanda Boolean @default(true)
+  pdvTaxEnabled     Boolean @default(true)
+  pdvTaxRate        Decimal @default(10.00) @db.Decimal(5, 2)
+
   platformAccessStatus  CompanyAccessStatus @default(ACTIVE)
   platformBlockedAt     DateTime?
   platformBlockedReason String?
@@ -491,6 +495,7 @@ model Order {
   status             OrderStatus
   paymentMethod      PaymentMethod?
   taxApplied         Boolean        @default(true)
+  taxRate            Decimal        @default(10.00) @db.Decimal(5, 2)
 
   deviceId String?
 

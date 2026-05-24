@@ -615,6 +615,7 @@ async function createOrder(data, userId) {
                 total: new client_1.Prisma.Decimal(data.total),
                 paymentMethod: data.paymentMethod ?? null,
                 taxApplied: data.taxApplied,
+                taxRate: new client_1.Prisma.Decimal(data.taxRate ?? 10),
                 deviceId: resolvedDeviceId,
                 createdByUserId: userId,
                 items: {
@@ -702,6 +703,7 @@ async function createOrder(data, userId) {
                 status: createdOrder.status,
                 paymentMethod: createdOrder.paymentMethod,
                 taxApplied: createdOrder.taxApplied,
+                taxRate: Number(createdOrder.taxRate ?? 10),
             },
         });
         return createdOrder;
@@ -734,6 +736,7 @@ async function createOrder(data, userId) {
         total: Number(order.total),
         paymentMethod: order.paymentMethod,
         taxApplied: order.taxApplied,
+        taxRate: Number(order.taxRate ?? 10),
         printJobs,
     };
 }
@@ -797,6 +800,7 @@ async function getOrdersByCompany(companyId, includeCancelled = true) {
         total: Number(order.total),
         paymentMethod: order.paymentMethod,
         taxApplied: order.taxApplied,
+        taxRate: Number(order.taxRate ?? 10),
         items: order.items.map((item) => ({
             product: {
                 ...item.product,
@@ -874,6 +878,7 @@ async function cancelOrder(orderId, companyId, userId) {
         total: Number(order.total),
         paymentMethod: order.paymentMethod,
         taxApplied: order.taxApplied,
+        taxRate: Number(order.taxRate ?? 10),
     };
 }
 async function getInternalCustomerPendingOrders(companyId, internalCustomerId) {
@@ -937,6 +942,7 @@ async function getInternalCustomerPendingOrders(companyId, internalCustomerId) {
         total: Number(order.total),
         paymentMethod: order.paymentMethod,
         taxApplied: order.taxApplied,
+        taxRate: Number(order.taxRate ?? 10),
         items: order.items.map((item) => ({
             unitPrice: Number(item.unitPrice),
             totalPrice: Number(item.totalPrice),
@@ -1035,6 +1041,7 @@ async function getInternalCustomerTodayOrders(companyId, internalCustomerId) {
         total: Number(order.total),
         paymentMethod: order.paymentMethod,
         taxApplied: order.taxApplied,
+        taxRate: Number(order.taxRate ?? 10),
         items: order.items.map((item) => ({
             unitPrice: Number(item.unitPrice),
             totalPrice: Number(item.totalPrice),
@@ -1172,6 +1179,7 @@ async function generateOrdersReportPdf(companyId) {
             }
             doc.text(`Pagamento: ${order.paymentMethod ?? '-'}`);
             doc.text(`Taxa aplicada: ${order.taxApplied ? 'Sim' : 'Não'}`);
+            doc.text(`Taxa (%): ${Number(order.taxRate ?? 10).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}`);
             doc.text(`Status: ${order.status}`);
             doc.text(`Criado em: ${new Date(order.createdAt).toLocaleString('pt-BR')}`);
             doc.text(`Total: R$ ${Number(order.total).toFixed(2)}`);

@@ -291,3 +291,70 @@ export async function deleteTestCompany({ userId, companyId }: DeleteTestCompany
     deletedCompany: company,
   }
 }
+
+
+function normalizePdvTaxRate(value: unknown) {
+  const numericValue = Number(value)
+
+  if (!Number.isFinite(numericValue)) {
+    return 10
+  }
+
+  return Math.min(100, Math.max(0, Number(numericValue.toFixed(2))))
+}
+
+function normalizePdvSettings(company: {
+  pdvRequireComanda?: boolean | null
+  pdvTaxEnabled?: boolean | null
+  pdvTaxRate?: any
+}) {
+  return {
+    requireComanda: company.pdvRequireComanda ?? true,
+    taxEnabled: company.pdvTaxEnabled ?? true,
+    taxRate: normalizePdvTaxRate(company.pdvTaxRate ?? 10),
+  }
+}
+
+export async function getPdvSettings(companyId: string) {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId },
+    select: {
+      pdvRequireComanda: true,
+      pdvTaxEnabled: true,
+      pdvTaxRate: true,
+    },
+  })
+
+  if (!company) {
+    throw new Error('COMPANY_NOT_FOUND')
+  }
+
+  return normalizePdvSettings(company)
+}
+
+export async function updatePdvSettings(
+  companyId: string,
+  input: {
+    requireComanda?: boolean
+    taxEnabled?: boolean
+    taxRate?: number | string
+  }
+) {
+  const normalizedTaxRate = normalizePdvTaxRate(input.taxRate ?? 10)
+
+  const company = await prisma.company.update({
+    where: { id: companyId },
+    data: {
+      pdvRequireComanda: input.requireComanda ?? true,
+      pdvTaxEnabled: input.taxEnabled ?? true,
+      pdvTaxRate: normalizedTaxRate,
+    },
+    select: {
+      pdvRequireComanda: true,
+      pdvTaxEnabled: true,
+      pdvTaxRate: true,
+    },
+  })
+
+  return normalizePdvSettings(company)
+}

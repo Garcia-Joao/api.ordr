@@ -5,6 +5,8 @@ const auth_middleware_1 = require("../middleware/auth.middleware");
 const require_permission_middleware_1 = require("../middleware/require-permission.middleware");
 const companies_controller_1 = require("../controllers/companies.controller");
 const router = (0, express_1.Router)();
+router.get('/pdv-settings', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('settings.view', 'settings.update', 'pdv.view'), companies_controller_1.getPdvSettings);
+router.put('/pdv-settings', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('settings.update'), companies_controller_1.updatePdvSettings);
 router.post('/create-test-company', auth_middleware_1.requireAuth, (0, require_permission_middleware_1.requirePermission)('settings.update'), companies_controller_1.createTestCompany);
 router.delete('/test-company/:companyId', auth_middleware_1.requireAuth, companies_controller_1.deleteTestCompany);
 exports.default = router;

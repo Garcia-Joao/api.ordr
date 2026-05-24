@@ -482,6 +482,7 @@ function buildReceiptPayload(order: any, port: any) {
   )
   const total = Number(order.total ?? subtotal)
   const taxApplied = Boolean(order.taxApplied)
+  const taxRate = Number(order.taxRate ?? 10)
   const taxAmount = taxApplied ? Math.max(0, total - subtotal) : 0
 
   return {
@@ -494,6 +495,7 @@ function buildReceiptPayload(order: any, port: any) {
     paymentMethod: order.paymentMethod ?? null,
     paymentMethodLabel: getPaymentMethodLabel(order.paymentMethod),
     taxApplied,
+    taxRate: Number(taxRate.toFixed(2)),
     subtotal: Number(subtotal.toFixed(2)),
     taxAmount: Number(taxAmount.toFixed(2)),
     total: Number(total.toFixed(2)),

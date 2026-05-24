@@ -76,3 +76,40 @@ export async function deleteTestCompany(req: AuthRequest, res: Response) {
     })
   }
 }
+
+
+export async function getPdvSettings(req: AuthRequest, res: Response) {
+  try {
+    const companyId = req.user?.companyId
+
+    if (!companyId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const settings = await companiesService.getPdvSettings(companyId)
+    return res.json(settings)
+  } catch (error: any) {
+    console.error('getPdvSettings error:', error)
+    return res.status(statusForCompanyError(error?.message)).json({
+      error: error?.message || 'Failed to load PDV settings',
+    })
+  }
+}
+
+export async function updatePdvSettings(req: AuthRequest, res: Response) {
+  try {
+    const companyId = req.user?.companyId
+
+    if (!companyId) {
+      return res.status(401).json({ error: 'Unauthorized' })
+    }
+
+    const settings = await companiesService.updatePdvSettings(companyId, req.body ?? {})
+    return res.json(settings)
+  } catch (error: any) {
+    console.error('updatePdvSettings error:', error)
+    return res.status(statusForCompanyError(error?.message)).json({
+      error: error?.message || 'Failed to save PDV settings',
+    })
+  }
+}

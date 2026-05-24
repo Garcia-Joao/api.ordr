@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createTestCompanyFromCompany = createTestCompanyFromCompany;
 exports.deleteTestCompany = deleteTestCompany;
+exports.getPdvSettings = getPdvSettings;
+exports.updatePdvSettings = updatePdvSettings;
 const client_1 = require("@prisma/client");
 const prisma_1 = require("../lib/prisma");
 async function assertAdminAccess(userId, companyId) {
@@ -247,4 +249,49 @@ async function deleteTestCompany({ userId, companyId }) {
         ok: true,
         deletedCompany: company,
     };
+}
+function normalizePdvTaxRate(value) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return 10;
+    }
+    return Math.min(100, Math.max(0, Number(numericValue.toFixed(2))));
+}
+function normalizePdvSettings(company) {
+    return {
+        requireComanda: company.pdvRequireComanda ?? true,
+        taxEnabled: company.pdvTaxEnabled ?? true,
+        taxRate: normalizePdvTaxRate(company.pdvTaxRate ?? 10),
+    };
+}
+async function getPdvSettings(companyId) {
+    const company = await prisma_1.prisma.company.findUnique({
+        where: { id: companyId },
+        select: {
+            pdvRequireComanda: true,
+            pdvTaxEnabled: true,
+            pdvTaxRate: true,
+        },
+    });
+    if (!company) {
+        throw new Error('COMPANY_NOT_FOUND');
+    }
+    return normalizePdvSettings(company);
+}
+async function updatePdvSettings(companyId, input) {
+    const normalizedTaxRate = normalizePdvTaxRate(input.taxRate ?? 10);
+    const company = await prisma_1.prisma.company.update({
+        where: { id: companyId },
+        data: {
+            pdvRequireComanda: input.requireComanda ?? true,
+            pdvTaxEnabled: input.taxEnabled ?? true,
+            pdvTaxRate: normalizedTaxRate,
+        },
+        select: {
+            pdvRequireComanda: true,
+            pdvTaxEnabled: true,
+            pdvTaxRate: true,
+        },
+    });
+    return normalizePdvSettings(company);
 }
